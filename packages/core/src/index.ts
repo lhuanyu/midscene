@@ -30,4 +30,5 @@ export type {
   MidsceneYamlFlowItem,
   MidsceneYamlFlowItemAIRightClick,
   MidsceneYamlFlowItemWaitForRequest,
+  MidsceneYamlConfigResult,
 } from './yaml';
