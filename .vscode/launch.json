@@ -1,0 +1,11 @@
+{
+    "configurations": [
+        {
+            "type": "node-terminal",
+            "name": "Run Script: build (android-playground)",
+            "request": "launch",
+            "command": "pnpm run build",
+            "cwd": "${workspaceFolder}/apps/android-playground"
+        }
+    ]
+}

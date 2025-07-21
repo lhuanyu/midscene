@@ -356,7 +356,8 @@ export type ExecutionTaskType =
   | 'Insight'
   | 'Action'
   | 'Assertion'
-  | 'Log';
+  | 'Log'
+  | 'WaitForRequest';
 
 export interface ExecutorContext {
   task: ExecutionTask;
@@ -512,6 +513,26 @@ export type ExecutionTaskLogApply<
 > = ExecutionTaskApply<'Log', LogParam, void, void>;
 
 export type ExecutionTaskLog = ExecutionTask<ExecutionTaskLogApply>;
+
+/*
+task - WaitForRequest
+*/
+
+export type ExecutionTaskWaitForRequestApply<
+  WaitForRequestParam = {
+    endpoint: string;
+    timeout: number;
+    expectedStatus: 'success' | 'failure' | 'any';
+    port: number;
+  },
+  WaitForRequestResult = {
+    status: 'success' | 'failure';
+    data?: any;
+    timestamp: number;
+  }
+> = ExecutionTaskApply<'WaitForRequest', WaitForRequestParam, WaitForRequestResult, void>;
+
+export type ExecutionTaskWaitForRequest = ExecutionTask<ExecutionTaskWaitForRequestApply>;
 
 /*
 task - planning

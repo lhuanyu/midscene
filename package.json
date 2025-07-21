@@ -4,6 +4,7 @@
   "version": "0.22.1",
   "scripts": {
     "dev": "nx run-many --target=build:watch --exclude=android-playground,chrome-extension,@midscene/report,doc --verbose",
+    "dev:android": "nx run android-playground:dev",
     "build": "nx run-many --target=build --exclude=doc --verbose",
     "build:skip-cache": "nx run-many --target=build --exclude=doc --verbose --skip-nx-cache",
     "test": "nx run-many --target=test --projects=@midscene/core,@midscene/shared,@midscene/visualizer,@midscene/web,@midscene/cli,@midscene/android --verbose",

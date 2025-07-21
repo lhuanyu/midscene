@@ -1,0 +1,16 @@
+web:
+  url: "data:text/html,<html><body><h1>Test Page</h1><p>Testing waitForRequest functionality</p></body></html>"
+
+tasks:
+  - name: "test waitForRequest"
+    flow:
+      - aiAction: "Confirm page has loaded"
+      
+      # Wait for external confirmation
+      - waitForRequest:
+          endpoint: "/test-confirm"
+          timeout: 60000
+          expectedStatus: "success"
+        name: "confirmation_result"
+      
+      - aiAction: "Continue with subsequent steps"

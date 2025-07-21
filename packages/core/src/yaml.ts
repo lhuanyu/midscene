@@ -131,6 +131,16 @@ export interface MidsceneYamlFlowItemAIWaitFor {
   timeout?: number;
 }
 
+export interface MidsceneYamlFlowItemWaitForRequest {
+  waitForRequest: {
+    endpoint: string; // The endpoint identifier or URL path to wait for
+    timeout?: number; // Timeout in milliseconds
+    expectedStatus?: 'success' | 'failure' | 'any'; // The expected status
+    port?: number; // Listening port, defaults to 3767 (to avoid conflict with bridge-mode's 3766)
+  };
+  name?: string; // Optional variable name for the result
+}
+
 export interface MidsceneYamlFlowItemAITap extends LocateOption {
   aiTap: string;
 }
@@ -178,13 +188,20 @@ export type MidsceneYamlFlowItem =
   | MidsceneYamlFlowItemAIAction
   | MidsceneYamlFlowItemAIAssert
   | MidsceneYamlFlowItemAIQuery
+  | MidsceneYamlFlowItemAINumber
+  | MidsceneYamlFlowItemAIString
+  | MidsceneYamlFlowItemAIAsk
+  | MidsceneYamlFlowItemAIBoolean
+  | MidsceneYamlFlowItemAILocate
   | MidsceneYamlFlowItemAIWaitFor
+  | MidsceneYamlFlowItemWaitForRequest
   | MidsceneYamlFlowItemAITap
   | MidsceneYamlFlowItemAIRightClick
   | MidsceneYamlFlowItemAIHover
   | MidsceneYamlFlowItemAIInput
   | MidsceneYamlFlowItemAIKeyboardPress
   | MidsceneYamlFlowItemAIScroll
+  | MidsceneYamlFlowItemEvaluateJavaScript
   | MidsceneYamlFlowItemSleep
   | MidsceneYamlFlowItemLogScreenshot;
 

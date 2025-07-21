@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { assert, ifInBrowser } from '@midscene/shared/utils';
+import { waitForExternalRequest } from '@midscene/core';
 
 import type { PageAgent } from '@/common/agent';
 import type {
@@ -20,6 +21,7 @@ import type {
   MidsceneYamlFlowItemAIString,
   MidsceneYamlFlowItemAITap,
   MidsceneYamlFlowItemAIWaitFor,
+  MidsceneYamlFlowItemWaitForRequest,
   MidsceneYamlFlowItemEvaluateJavaScript,
   MidsceneYamlFlowItemLogScreenshot,
   MidsceneYamlFlowItemSleep,
@@ -269,6 +271,78 @@ export class ScriptPlayer<T extends MidsceneYamlScriptEnv> {
         );
         const timeout = waitForTask.timeout;
         await agent.aiWaitFor(prompt, { timeoutMs: timeout });
+      } else if ('waitForRequest' in flowItem) {
+        const waitForRequestTask = flowItem as MidsceneYamlFlowItemWaitForRequest & { name?: string };
+        const requestConfig = waitForRequestTask.waitForRequest;
+        assert(requestConfig, 'missing config for waitForRequest');
+        assert(requestConfig.endpoint, 'missing endpoint for waitForRequest');
+        
+        console.log(`[YAML Player] Waiting for external request to: ${requestConfig.endpoint}`);
+        
+        // 创建日志记录，类似于其他任务的处理方式
+        const now = Date.now();
+        const base64 = await agent.page.screenshotBase64();
+        
+        try {
+          const result = await waitForExternalRequest({
+            endpoint: requestConfig.endpoint,
+            timeout: requestConfig.timeout || 30000,
+            expectedStatus: requestConfig.expectedStatus || 'any',
+            port: requestConfig.port || 3767
+          });
+          
+          console.log(`[YAML Player] Request received:`, result);
+          
+          // 记录到报告中
+          const endTime = Date.now();
+          const recorder = [
+            {
+              type: 'screenshot' as const,
+              ts: now,
+              screenshot: base64,
+            },
+          ];
+          
+          const task = {
+            type: 'WaitForRequest' as const,
+            subType: 'WaitForRequest',
+            status: 'finished' as const,
+            recorder,
+            timing: {
+              start: now,
+              end: endTime,
+              cost: endTime - now,
+            },
+            param: {
+              endpoint: requestConfig.endpoint,
+              timeout: requestConfig.timeout || 30000,
+              expectedStatus: requestConfig.expectedStatus || 'any',
+              port: requestConfig.port || 3767,
+            },
+            result,
+            executor: async () => {},
+          };
+          
+          const executionDump = {
+            sdkVersion: '',
+            logTime: now,
+            model_name: '',
+            model_description: '',
+            name: `WaitForRequest - ${requestConfig.endpoint}`,
+            description: `Waiting for external request to endpoint: ${requestConfig.endpoint}`,
+            tasks: [task],
+          };
+          
+          agent.appendExecutionDump(executionDump);
+          
+          // 将结果存储（如果需要的话）
+          if (waitForRequestTask.name) {
+            this.setResult(waitForRequestTask.name, result);
+          }
+        } catch (error) {
+          console.error(`[YAML Player] Wait for request failed:`, error);
+          throw error;
+        }
       } else if ('sleep' in (flowItem as MidsceneYamlFlowItemSleep)) {
         const sleepTask = flowItem as MidsceneYamlFlowItemSleep;
         const ms = sleepTask.sleep;

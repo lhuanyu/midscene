@@ -1,0 +1,128 @@
+# Midscene waitForRequest feature examples
+
+# Example 1: Basic waiting for an external request
+tasks:
+  - name: "Basic wait for request example"
+    flows:
+      - aiAction: "Preparation phase - display waiting status"
+      
+      # Wait for external confirmation
+      - waitForRequest:
+          endpoint: "/confirmation"
+          timeout: 30000
+          expectedStatus: "success"
+        name: "confirmation_result"
+      
+      - aiAction: "Continue with subsequent steps"
+
+---
+
+# Example 2: Manual approval process
+tasks:
+  - name: "Order approval process"
+    flows:
+      - aiAction: "Fill out order form"
+      - aiInput:
+          locate: "Order amount"
+          value: "1000"
+      - aiAction: "Submit order"
+      - aiAssert: "Order status shows 'Waiting for approval'"
+      
+      # Wait for manual approval (requires an external system to send a request at runtime)
+      # Send command: node external-request.js --endpoint /order-approval --status success --data '{"approved_by":"manager","order_id":"12345"}'
+      - waitForRequest:
+          endpoint: "/order-approval"
+          timeout: 300000  # 5 minute timeout
+          expectedStatus: "success"
+        name: "approval_result"
+      
+      - aiAssert: "Order status shows 'Approved'"
+      - aiAction: "View approval details"
+
+---
+
+# Example 3: Waiting for payment callback
+tasks:
+  - name: "Payment process test"
+    flows:
+      - aiAction: "Select product and add to cart"
+      - aiAction: "Click checkout"
+      - aiAction: "Select payment method"
+      - aiAction: "Click pay"
+      - aiAssert: "Redirect to payment page"
+      
+      # Simulate payment completion callback
+      # Success: node external-request.js --endpoint /payment-callback --status success --data '{"payment_id":"pay_123","amount":"100.00"}'
+      # Failure: node external-request.js --endpoint /payment-callback --status failure --data '{"error":"insufficient_funds"}'
+      - waitForRequest:
+          endpoint: "/payment-callback"
+          timeout: 120000  # 2 minute timeout
+          expectedStatus: "any"  # Accept success or failure
+        name: "payment_result"
+      
+      # Assert based on payment result
+      - aiAssert: "Display payment result page"
+
+---
+
+# Example 4: Multi-step waiting
+tasks:
+  - name: "Multi-stage external confirmation"
+    flows:
+      - aiAction: "Start process"
+      
+      # Stage 1: Wait for data preparation
+      - waitForRequest:
+          endpoint: "/data-preparation"
+          timeout: 60000
+          expectedStatus: "success"
+        name: "data_prep"
+      
+      - aiAction: "Operate with prepared data"
+      
+      # Stage 2: Wait for external validation
+      - waitForRequest:
+          endpoint: "/validation"
+          timeout: 30000
+          expectedStatus: "success"
+        name: "validation_result"
+      
+      - aiAction: "Display final result"
+
+---
+
+# Example 5: Error handling and timeout
+tasks:
+  - name: "Error handling example"
+    flows:
+      - aiAction: "Start operation"
+      
+      # A wait that might time out
+      - waitForRequest:
+          endpoint: "/slow-response"
+          timeout: 5000  # Very short timeout
+          expectedStatus: "success"
+        name: "slow_result"
+        onError: "continue"  # Continue execution on error
+      
+      - aiAssert: "Display timeout or error handling interface"
+
+---
+
+# Example 6: Conditional waiting
+tasks:
+  - name: "Conditional waiting"
+    flows:
+      - aiAction: "Check condition"
+      - aiQuery: "Current user role"
+        name: "user_role"
+      
+      # Only admins need to wait for approval
+      - waitForRequest:
+          endpoint: "/admin-approval"
+          timeout: 60000
+          expectedStatus: "success"
+        name: "admin_approval"
+        condition: "${user_role} === 'admin'"
+      
+      - aiAction: "Continue business process"
