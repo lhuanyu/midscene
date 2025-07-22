@@ -1,0 +1,23 @@
+android:
+  deviceId: "your-device-id"
+
+tasks:
+  - name: "Demo automation steps"
+    flow:
+      - ai: "open browser and navigate to google.com"
+      - sleep: 3000
+      - aiInput: "Midscene.js automation"
+        locate: "search box"
+      - aiTap: "search button"
+      - sleep: 2000
+      - aiQuery: "string[], list of search result titles"
+        name: "searchResults"
+      - aiAssert: "there are search results displayed"
+      - aiScroll:
+          direction: "down"
+          scrollType: "once"
+        locate: "search results"
+      - sleep: 1000
+      - aiTap: "first search result link"
+      - aiWaitFor: "page has loaded completely"
+      - aiAssert: "the page title contains Midscene"

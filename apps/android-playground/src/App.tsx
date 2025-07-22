@@ -17,11 +17,13 @@ import {
   useEnvConfig,
   useServerValid,
 } from '@midscene/visualizer';
-import { Col, ConfigProvider, Form, Layout, Row, message } from 'antd';
+import { Col, ConfigProvider, Form, Layout, Row, message, Tabs, Divider } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { type Socket, io } from 'socket.io-client';
+import type { MidsceneYamlFlowItem } from '@midscene/core';
 import AdbDevice from './adb-device';
 import ScrcpyPlayer, { type ScrcpyRefMethods } from './scrcpy-player';
+import StepManager from './components/StepManager';
 
 import '@midscene/visualizer/index.css';
 import './adb-device/index.less';
@@ -57,6 +59,11 @@ export default function App() {
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const configAlreadySet = Object.keys(config || {}).length >= 1;
   const serverValid = useServerValid(true);
+  const [isStepMode, setIsStepMode] = useState(false);
+  const [stepModeLoading, setStepModeLoading] = useState(false);
+
+  // State for storing steps across mode switches
+  const [savedSteps, setSavedSteps] = useState<any[]>([]);
 
   // Socket connection and device management
   const socketRef = useRef<Socket | null>(null);
@@ -84,7 +91,7 @@ export default function App() {
       socket.emit('get-devices');
     });
 
-    socket.on('disconnect', (reason: string) => {
+    socket.on('disconnect', (_reason: string) => {
       setLoadingDevices(true);
     });
 
@@ -118,10 +125,10 @@ export default function App() {
       setLoadingDevices(false);
     });
 
-    socket.on('error', (error: Error) => {
-      console.error('Socket.IO error:', error);
+    socket.on('error', (_error: Error) => {
+      console.error('Socket.IO error:', _error);
       messageApi.error(
-        `Error occurred while communicating with the server: ${error.message || 'Unknown error'}`,
+        `Error occurred while communicating with the server: ${_error.message || 'Unknown error'}`,
       );
     });
 
@@ -357,12 +364,97 @@ export default function App() {
   const handleStop = useCallback(async () => {
     clearPollingInterval();
     setLoading(false);
+    setStepModeLoading(false);
     resetResult();
     if (currentRequestIdRef.current) {
       await cancelTask(currentRequestIdRef.current);
     }
     messageApi.info('Operation stopped');
   }, [messageApi, clearPollingInterval]);
+
+  // handle execute steps
+  const handleExecuteSteps = useCallback(async (steps: MidsceneYamlFlowItem[]) => {
+    if (!selectedDeviceId) {
+      messageApi.warning('Please select a device first');
+      return;
+    }
+
+    if (!connectionReady) {
+      messageApi.warning(
+        'Waiting for connection establishment, please try again later',
+      );
+      return;
+    }
+
+    setStepModeLoading(true);
+    setResult(null);
+    setReplayScriptsInfo(null);
+    setLoadingProgressText('');
+
+    const thisRunningId = Date.now().toString();
+    currentRequestIdRef.current = thisRunningId;
+
+    // start polling progress immediately
+    startPollingProgress(thisRunningId);
+
+    try {
+      // Create a YAML script content for the steps
+      const yamlScript = {
+        android: {
+          deviceId: selectedDeviceId,
+        },
+        tasks: [
+          {
+            name: 'Step Execution',
+            flow: steps,
+          },
+        ],
+      };
+
+      // Execute using server's YAML execution capability
+      const res = await requestPlaygroundServer(
+        selectedDeviceId,
+        'aiAction', // Use aiAction as base type
+        JSON.stringify(yamlScript), // Send YAML as JSON string
+        {
+          requestId: thisRunningId,
+          deepThink,
+        },
+      );
+
+      // stop polling
+      clearPollingInterval();
+
+      setResult(res);
+      setStepModeLoading(false);
+
+      if (!res) {
+        throw new Error('server returned empty response');
+      }
+
+      // handle script information
+      if (res?.dump) {
+        const info = allScriptsFromDump(res.dump);
+        setReplayScriptsInfo(info);
+        setReplayCounter((c) => c + 1);
+      }
+      messageApi.success(`Successfully executed ${steps.length} steps`);
+    } catch (error) {
+      clearPollingInterval();
+      setStepModeLoading(false);
+      console.error('execute steps error:', error);
+      messageApi.error(
+        `Steps execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }, [
+    selectedDeviceId,
+    messageApi,
+    connectionReady,
+    startPollingProgress,
+    clearPollingInterval,
+    deepThink,
+  ]);
 
   return (
     <ConfigProvider theme={globalThemeConfig()}>
@@ -386,37 +478,121 @@ export default function App() {
                     <EnvConfig />
                   </div>
                   <h2>Command input</h2>
-                  <Form form={form} className="command-form">
-                    <div className="form-content">
-                      <div className="command-input-wrapper">
-                        <PromptInput
-                          runButtonEnabled={
-                            !!selectedDeviceId && configAlreadySet
-                          }
-                          form={form}
-                          serviceMode="Server"
-                          selectedType={selectedType}
-                          dryMode={false}
-                          stoppable={loading}
-                          loading={loading}
-                          onRun={handleRun}
-                          onStop={handleStop}
-                        />
-                      </div>
-                      <div
-                        className="result-container"
-                        style={
-                          result
-                            ? {}
-                            : {
+                  <Tabs
+                    defaultActiveKey="single"
+                    onChange={(key) => setIsStepMode(key === 'steps')}
+                    items={[
+                      {
+                        key: 'single',
+                        label: 'Single Command',
+                        children: null,
+                      },
+                      {
+                        key: 'steps',
+                        label: 'Step by Step',
+                        children: null,
+                      },
+                    ]}
+                  />
+                  {!isStepMode ? (
+                    <Form form={form} className="command-form">
+                      <div className="form-content">
+                        <div className="command-input-wrapper">
+                          <PromptInput
+                            runButtonEnabled={
+                              !!selectedDeviceId && configAlreadySet
+                            }
+                            form={form}
+                            serviceMode="Server"
+                            selectedType={selectedType}
+                            dryMode={false}
+                            stoppable={loading}
+                            loading={loading}
+                            onRun={handleRun}
+                            onStop={handleStop}
+                          />
+                        </div>
+                        <div
+                          className="result-container"
+                          style={
+                            result
+                              ? {}
+                              : {
                                 border: '1px solid #0000001f',
                                 borderRadius: '8px',
                               }
-                        }
+                          }
+                        >
+                          <PlaygroundResultView
+                            result={result}
+                            loading={loading}
+                            serverValid={serverValid}
+                            serviceMode="Server"
+                            replayScriptsInfo={replayScriptsInfo}
+                            replayCounter={replayCounter}
+                            loadingProgressText={loadingProgressText}
+                            verticalMode={false}
+                            notReadyMessage={
+                              <span>
+                                Don&apos;t worry, just one more step to launch the
+                                playground server.
+                                <br />
+                                <strong>
+                                  npx --yes @midscene/android-playground
+                                </strong>
+                              </span>
+                            }
+                          />
+                        </div>
+                      </div>
+                    </Form>
+                  ) : (
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      height: 'calc(100vh - 200px)', // 减去头部和其他元素的高度
+                      gap: '16px'
+                    }}>
+                      <div style={{
+                        flex: '1 1 auto',
+                        minHeight: 0, // 允许flex子元素缩小
+                        overflow: 'hidden'
+                      }}>
+                        <StepManager
+                          onExecuteSteps={handleExecuteSteps}
+                          isRunning={stepModeLoading}
+                          onStop={handleStop}
+                          initialSteps={savedSteps}
+                          onStepsChange={setSavedSteps}
+                        />
+                      </div>
+
+                      {/* 分割线 */}
+                      <Divider
+                        style={{
+                          margin: '0',
+                          borderColor: '#E5E7EB',
+                          borderWidth: '1px'
+                        }}
+                      />
+
+                      <div
+                        className="result-container"
+                        style={{
+                          flex: '0 0 auto', // 不参与flex伸缩，保持固定高度
+                          maxHeight: '300px', // 限制结果区域的最大高度
+                          overflowY: 'auto',
+                          ...(result
+                            ? {}
+                            : {
+                              border: '1px solid #0000001f',
+                              borderRadius: '8px',
+                            })
+                        }}
                       >
                         <PlaygroundResultView
                           result={result}
-                          loading={loading}
+                          loading={stepModeLoading}
                           serverValid={serverValid}
                           serviceMode="Server"
                           replayScriptsInfo={replayScriptsInfo}
@@ -436,7 +612,7 @@ export default function App() {
                         />
                       </div>
                     </div>
-                  </Form>
+                  )}
                 </div>
               </Col>
 
