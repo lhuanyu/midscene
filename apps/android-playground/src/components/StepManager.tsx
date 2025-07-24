@@ -3,6 +3,8 @@ import { Button, List, Select, Input, Typography, Badge, message, Upload, Drawer
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { MidsceneYamlFlowItem } from '@midscene/core';
 import * as yaml from 'js-yaml';
+import { decomposeTestCaseByText } from '@midscene/core/ai-model';
+import { convertDecompositionToStepData } from '../utils/decompositionUtils';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -51,6 +53,11 @@ export const StepManager: React.FC<StepManagerProps> = ({
     const [quickAddVisible, setQuickAddVisible] = useState(false);
     const [quickStepType, setQuickStepType] = useState<StepData['type']>('aiAction');
     const [quickPrompt, setQuickPrompt] = useState('');
+
+    // 测试用例分解状态
+    const [testCaseInput, setTestCaseInput] = useState('');
+    const [isDecomposing, setIsDecomposing] = useState(false);
+    const [decomposeDrawerOpen, setDecomposeDrawerOpen] = useState(false);
 
     // 滚动容器的引用
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -188,7 +195,56 @@ export const StepManager: React.FC<StepManagerProps> = ({
         }
     }, [quickAddVisible]);
 
-    const quickAddStep = useCallback(() => {
+    // 测试用例分解相关方法
+    const openDecomposeDrawer = useCallback(() => {
+        setTestCaseInput('');
+        setDecomposeDrawerOpen(true);
+    }, []);
+
+    const closeDecomposeDrawer = useCallback(() => {
+        setDecomposeDrawerOpen(false);
+        setTestCaseInput('');
+    }, []);
+
+    const decomposeTestCase = useCallback(async () => {
+        if (!testCaseInput.trim()) return;
+
+        setIsDecomposing(true);
+        try {
+            // 使用纯文本分解方法
+            const decomposition = await decomposeTestCaseByText(testCaseInput);
+
+            // 转换为 StepData 格式
+            const decomposedSteps = convertDecompositionToStepData(decomposition);
+
+            setSteps(prev => [...prev, ...decomposedSteps]);
+            setDecomposeDrawerOpen(false);
+            setTestCaseInput('');
+
+            message.success(`成功分解为 ${decomposedSteps.length} 个步骤`);
+
+            // 显示分解推理信息
+            if (decomposition.reasoning) {
+                console.log('分解推理:', decomposition.reasoning);
+            }
+
+            // 分解完成后，延迟滚动到底部
+            setTimeout(() => {
+                if (scrollContainerRef.current) {
+                    scrollContainerRef.current.scrollTo({
+                        top: scrollContainerRef.current.scrollHeight,
+                        behavior: 'smooth'
+                    });
+                }
+            }, 200);
+
+        } catch (error) {
+            console.error('测试用例分解失败:', error);
+            message.error(`分解失败: ${error instanceof Error ? error.message : '未知错误'}`);
+        } finally {
+            setIsDecomposing(false);
+        }
+    }, [testCaseInput]); const quickAddStep = useCallback(() => {
         if (!quickPrompt.trim()) return;
 
         const newStep: StepData = {
@@ -582,6 +638,20 @@ export const StepManager: React.FC<StepManagerProps> = ({
                         }}
                     >
                         {quickAddVisible ? '收起快速添加' : '快速添加'}
+                    </Button>
+
+                    <Button
+                        type="dashed"
+                        onClick={openDecomposeDrawer}
+                        style={{
+                            borderRadius: '8px',
+                            fontWeight: 500,
+                            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            borderColor: '#667eea',
+                            color: 'white'
+                        }}
+                    >
+                        AI 分解
                     </Button>
 
                     {steps.length > 0 && (
@@ -1168,6 +1238,116 @@ export const StepManager: React.FC<StepManagerProps> = ({
                             }}
                         >
                             保存修改
+                        </Button>
+                    </div>
+                </div>
+            </Drawer>
+
+            {/* 测试用例分解抽屉 */}
+            <Drawer
+                title="AI 测试用例分解"
+                placement="right"
+                width={520}
+                open={decomposeDrawerOpen}
+                onClose={closeDecomposeDrawer}
+                maskClosable={false}
+                extra={
+                    <Button onClick={closeDecomposeDrawer} style={{ borderRadius: '6px' }}>
+                        取消
+                    </Button>
+                }
+            >
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '20px',
+                    height: '100%'
+                }}>
+                    <div style={{
+                        padding: '16px',
+                        background: 'linear-gradient(135deg, #f6f9fc 0%, #e9f4ff 100%)',
+                        borderRadius: '12px',
+                        border: '1px solid #e1f0ff'
+                    }}>
+                        <div style={{
+                            fontSize: '14px',
+                            fontWeight: 500,
+                            color: '#1a73e8',
+                            marginBottom: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                        }}>
+                            AI 智能分解说明
+                        </div>
+                        <div style={{
+                            fontSize: '13px',
+                            color: '#5f6368',
+                            lineHeight: '1.5'
+                        }}>
+                            输入自然语言描述的测试用例，AI 将使用纯文本分解方法自动分解为可执行的具体步骤。
+                            <br />
+                            <strong>示例：</strong>"打开设置，找到 WiFi 选项，连接到指定网络"
+                        </div>
+                    </div>
+
+                    <div>
+                        <Text style={{ display: 'block', marginBottom: '12px', fontWeight: 500, fontSize: '16px' }}>
+                            测试用例描述
+                        </Text>
+                        <TextArea
+                            placeholder="请输入自然语言描述的测试用例，如：&#10;• 登录应用并搜索商品信息&#10;• 打开设置页面，修改用户名并保存&#10;• 进入购物车，选择商品并结算"
+                            value={testCaseInput}
+                            onChange={(e) => setTestCaseInput(e.target.value)}
+                            rows={6}
+                            style={{
+                                borderRadius: '8px',
+                                fontSize: '14px',
+                                lineHeight: '1.6'
+                            }}
+                            maxLength={500}
+                            showCount
+                        />
+                    </div>
+
+                    <div style={{
+                        padding: '12px',
+                        background: '#fff7e6',
+                        borderRadius: '8px',
+                        border: '1px solid #ffd591'
+                    }}>
+                        <div style={{
+                            fontSize: '13px',
+                            color: '#d46b08',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: '8px'
+                        }}>
+                            <span>💡</span>
+                            <div>
+                                <strong>注意：</strong>
+                                <br />
+                                • 描述越详细，分解结果越准确
+                                <br />
+                                • 支持复杂的多步骤操作流程
+                                <br />
+                                • AI 会根据 Android 应用特点优化步骤
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
+                        <Button
+                            type="primary"
+                            onClick={decomposeTestCase}
+                            loading={isDecomposing}
+                            disabled={!testCaseInput.trim()}
+                            size="large"
+                            style={{
+                                width: '100%'
+                            }}
+                        >
+                            {isDecomposing ? 'AI 分解中...' : '开始智能分解'}
                         </Button>
                     </div>
                 </div>

@@ -15,6 +15,10 @@ export {
   generateYamlTest,
   generateYamlTestStream,
 } from './prompt/yaml-generator';
+export {
+  decomposeTestCaseByText,
+  type TextDecompositionResponse,
+} from './prompt/text-decomposition';
 
 export type { ChatCompletionMessageParam } from 'openai/resources';
 
