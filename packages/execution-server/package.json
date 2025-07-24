@@ -1,0 +1,62 @@
+{
+    "name": "@midscene/execution-server",
+    "version": "0.23.3",
+    "description": "Remote execution server for Midscene Android automation",
+    "keywords": [
+        "Midscene",
+        "Android automation",
+        "remote execution",
+        "execution server",
+        "API server"
+    ],
+    "main": "./dist/lib/index.js",
+    "types": "./dist/types/index.d.ts",
+    "bin": {
+        "midscene-server": "./bin/server.js"
+    },
+    "files": [
+        "bin",
+        "dist",
+        "README.md"
+    ],
+    "exports": {
+        ".": {
+            "types": "./dist/types/index.d.ts",
+            "default": "./dist/lib/index.js"
+        },
+        "./server": {
+            "types": "./dist/types/server.d.ts",
+            "default": "./dist/lib/server.js"
+        }
+    },
+    "scripts": {
+        "dev": "modern dev",
+        "build": "modern build -c ./modern.config.ts",
+        "build:watch": "modern build -w -c ./modern.config.ts",
+        "test": "vitest --run",
+        "start": "node ./bin/server.js"
+    },
+    "dependencies": {
+        "@midscene/android": "workspace:*",
+        "@midscene/core": "workspace:*",
+        "@midscene/shared": "workspace:*",
+        "express": "^4.19.2",
+        "cors": "^2.8.5",
+        "uuid": "^9.0.1",
+        "ws": "^8.17.1"
+    },
+    "devDependencies": {
+        "@modern-js/module-tools": "^2.60.2",
+        "@types/cors": "^2.8.17",
+        "@types/express": "^4.17.21",
+        "@types/uuid": "^9.0.8",
+        "@types/ws": "^8.5.10",
+        "vitest": "^1.6.0"
+    },
+    "peerDependencies": {
+        "@midscene/android": "^0.23.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
