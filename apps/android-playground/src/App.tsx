@@ -551,10 +551,10 @@ export default function App() {
                       display: 'flex',
                       flexDirection: 'column',
                       height: 'calc(100vh - 200px)', // 减去头部和其他元素的高度
-                      gap: '16px'
+                      gap: '8px'
                     }}>
                       <div style={{
-                        flex: '1 1 auto',
+                        flex: '0 0 50%', // 固定占用50%高度
                         minHeight: 0, // 允许flex子元素缩小
                         overflow: 'hidden'
                       }}>
@@ -579,9 +579,9 @@ export default function App() {
                       <div
                         className="result-container"
                         style={{
-                          flex: '0 0 auto', // 不参与flex伸缩，保持固定高度
-                          maxHeight: '300px', // 限制结果区域的最大高度
-                          overflowY: 'auto',
+                          flex: '0 0 calc(50% - 20px)', // 固定占用50%高度减去分割线和间距
+                          minHeight: 0,
+                          overflow: 'hidden',
                           ...(result
                             ? {}
                             : {

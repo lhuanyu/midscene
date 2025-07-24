@@ -607,13 +607,13 @@ export const StepManager: React.FC<StepManagerProps> = ({
         }}>
             {/* 顶部操作栏 */}
             <div style={{
-                padding: '16px 0',
+                padding: '12px 0',
                 borderBottom: '1px solid #f0f0f0',
                 background: '#fff'
             }}>
                 <div style={{
                     display: 'flex',
-                    gap: '12px',
+                    gap: '8px',
                     alignItems: 'center',
                     flexWrap: 'wrap'
                 }}>
@@ -621,9 +621,13 @@ export const StepManager: React.FC<StepManagerProps> = ({
                         type="primary"
                         icon={<PlusOutlined />}
                         onClick={openAddDrawer}
+                        size="small"
                         style={{
-                            borderRadius: '8px',
-                            fontWeight: 500
+                            borderRadius: '6px',
+                            fontWeight: 500,
+                            fontSize: '12px',
+                            height: '28px',
+                            padding: '0 12px'
                         }}
                     >
                         详细添加
@@ -632,9 +636,13 @@ export const StepManager: React.FC<StepManagerProps> = ({
                     <Button
                         type="dashed"
                         onClick={toggleQuickAdd}
+                        size="small"
                         style={{
-                            borderRadius: '8px',
-                            fontWeight: 500
+                            borderRadius: '6px',
+                            fontWeight: 500,
+                            fontSize: '12px',
+                            height: '28px',
+                            padding: '0 12px'
                         }}
                     >
                         {quickAddVisible ? '收起快速添加' : '快速添加'}
@@ -643,9 +651,13 @@ export const StepManager: React.FC<StepManagerProps> = ({
                     <Button
                         type="dashed"
                         onClick={openDecomposeDrawer}
+                        size="small"
                         style={{
-                            borderRadius: '8px',
+                            borderRadius: '6px',
                             fontWeight: 500,
+                            fontSize: '12px',
+                            height: '28px',
+                            padding: '0 12px',
                             background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                             borderColor: '#667eea',
                             color: 'white'
@@ -660,9 +672,13 @@ export const StepManager: React.FC<StepManagerProps> = ({
                             icon={<PlayCircleOutlined />}
                             onClick={executeSteps}
                             disabled={isRunning}
+                            size="small"
                             style={{
-                                borderRadius: '8px',
+                                borderRadius: '6px',
                                 fontWeight: 500,
+                                fontSize: '12px',
+                                height: '28px',
+                                padding: '0 12px',
                                 background: '#52c41a',
                                 borderColor: '#52c41a'
                             }}
@@ -677,16 +693,20 @@ export const StepManager: React.FC<StepManagerProps> = ({
                             danger
                             icon={<StopOutlined />}
                             onClick={onStop}
+                            size="small"
                             style={{
-                                borderRadius: '8px',
-                                fontWeight: 500
+                                borderRadius: '6px',
+                                fontWeight: 500,
+                                fontSize: '12px',
+                                height: '28px',
+                                padding: '0 12px'
                             }}
                         >
                             停止执行
                         </Button>
                     )}
 
-                    <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
                         <Upload
                             beforeUpload={importFromYaml}
                             showUploadList={false}
@@ -694,7 +714,13 @@ export const StepManager: React.FC<StepManagerProps> = ({
                         >
                             <Button
                                 icon={<UploadOutlined />}
-                                style={{ borderRadius: '8px' }}
+                                size="small"
+                                style={{
+                                    borderRadius: '6px',
+                                    fontSize: '12px',
+                                    height: '28px',
+                                    padding: '0 10px'
+                                }}
                             >
                                 导入
                             </Button>
@@ -703,7 +729,13 @@ export const StepManager: React.FC<StepManagerProps> = ({
                             icon={<DownloadOutlined />}
                             onClick={exportToYaml}
                             disabled={steps.length === 0}
-                            style={{ borderRadius: '8px' }}
+                            size="small"
+                            style={{
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                height: '28px',
+                                padding: '0 10px'
+                            }}
                         >
                             导出
                         </Button>
@@ -712,7 +744,13 @@ export const StepManager: React.FC<StepManagerProps> = ({
                                 danger
                                 icon={<DeleteOutlined />}
                                 onClick={removeAllSteps}
-                                style={{ borderRadius: '8px' }}
+                                size="small"
+                                style={{
+                                    borderRadius: '6px',
+                                    fontSize: '12px',
+                                    height: '28px',
+                                    padding: '0 10px'
+                                }}
                                 title="清空所有步骤"
                             >
                                 清空
@@ -725,21 +763,21 @@ export const StepManager: React.FC<StepManagerProps> = ({
             {/* 快速添加表单 */}
             {quickAddVisible && (
                 <div style={{
-                    padding: '16px 0',
+                    padding: '12px 0',
                     borderBottom: '1px solid #f0f0f0',
                     background: '#f8f9fa'
                 }}>
                     <div style={{
                         display: 'flex',
-                        gap: '12px',
+                        gap: '8px',
                         alignItems: 'center',
                         flexWrap: 'wrap'
                     }}>
                         <Select
                             value={quickStepType}
                             onChange={setQuickStepType}
-                            style={{ width: 120 }}
-                            size="middle"
+                            style={{ width: 100 }}
+                            size="small"
                         >
                             <Select.Option value="aiAction">Action</Select.Option>
                             <Select.Option value="aiQuery">Query</Select.Option>
@@ -752,16 +790,20 @@ export const StepManager: React.FC<StepManagerProps> = ({
                             value={quickPrompt}
                             onChange={(e) => setQuickPrompt(e.target.value)}
                             onPressEnter={quickAddStep}
-                            style={{ flex: 1, minWidth: 250 }}
-                            size="middle"
+                            style={{ flex: 1, minWidth: 200, fontSize: '12px' }}
+                            size="small"
                         />
                         <Button
                             type="primary"
                             onClick={quickAddStep}
                             disabled={!quickPrompt.trim()}
+                            size="small"
                             style={{
-                                borderRadius: '8px',
-                                fontWeight: 500
+                                borderRadius: '6px',
+                                fontWeight: 500,
+                                fontSize: '12px',
+                                height: '24px',
+                                padding: '0 12px'
                             }}
                         >
                             添加
@@ -778,11 +820,11 @@ export const StepManager: React.FC<StepManagerProps> = ({
                     overflowY: 'auto',
                     overflowX: 'hidden',
                     minHeight: 0,
-                    padding: '16px 0'
+                    padding: '12px 0'
                 }}>
                 <div style={{
-                    marginBottom: '16px',
-                    fontSize: '16px',
+                    marginBottom: '12px',
+                    fontSize: '14px',
                     fontWeight: 500,
                     color: '#333',
                     display: 'flex',
@@ -799,20 +841,25 @@ export const StepManager: React.FC<StepManagerProps> = ({
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        minHeight: '200px',
+                        minHeight: '150px',
                         background: '#fafafa',
-                        borderRadius: '12px',
+                        borderRadius: '8px',
                         border: '1px dashed #d9d9d9',
-                        margin: '20px 0'
+                        margin: '16px 0'
                     }}>
-                        <Text type="secondary" style={{ fontSize: '16px', marginBottom: '12px' }}>
+                        <Text type="secondary" style={{ fontSize: '14px', marginBottom: '10px' }}>
                             还没有添加任何步骤
                         </Text>
                         <Button
                             type="primary"
                             icon={<PlusOutlined />}
                             onClick={openAddDrawer}
-                            style={{ borderRadius: '8px' }}
+                            size="small"
+                            style={{
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                height: '28px'
+                            }}
                         >
                             添加第一个步骤
                         </Button>
@@ -830,8 +877,12 @@ export const StepManager: React.FC<StepManagerProps> = ({
                                         onClick={() => openEditDrawer(step)}
                                         size="small"
                                         style={{
-                                            borderRadius: '6px',
-                                            color: '#1890ff'
+                                            borderRadius: '4px',
+                                            color: '#1890ff',
+                                            fontSize: '12px',
+                                            height: '24px',
+                                            width: '24px',
+                                            padding: '0'
                                         }}
                                         title="编辑步骤"
                                     />,
@@ -842,17 +893,21 @@ export const StepManager: React.FC<StepManagerProps> = ({
                                         size="small"
                                         danger
                                         style={{
-                                            borderRadius: '6px'
+                                            borderRadius: '4px',
+                                            fontSize: '12px',
+                                            height: '24px',
+                                            width: '24px',
+                                            padding: '0'
                                         }}
                                         title="删除步骤"
                                     />
                                 ]}
                                 style={{
-                                    marginBottom: '8px',
+                                    marginBottom: '6px',
                                     background: '#fff',
-                                    borderRadius: '8px',
+                                    borderRadius: '6px',
                                     border: '1px solid #f0f0f0',
-                                    padding: '12px 16px',
+                                    padding: '8px 12px',
                                     boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
                                     transition: 'all 0.2s ease'
                                 }}
@@ -861,23 +916,23 @@ export const StepManager: React.FC<StepManagerProps> = ({
                                     width: '100%',
                                     display: 'flex',
                                     alignItems: 'flex-start',
-                                    gap: '12px'
+                                    gap: '8px'
                                 }}>
                                     <Badge
                                         count={index + 1}
                                         color={getStepTypeColor(step.type)}
                                         size="small"
                                         style={{
-                                            fontSize: '12px',
-                                            minWidth: '24px',
-                                            height: '24px',
-                                            lineHeight: '24px'
+                                            fontSize: '10px',
+                                            minWidth: '20px',
+                                            height: '20px',
+                                            lineHeight: '20px'
                                         }}
                                     />
                                     <div style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
                                             <Text style={{
-                                                fontSize: '14px',
+                                                fontSize: '12px',
                                                 fontWeight: 500,
                                                 wordBreak: 'break-word'
                                             }}>
@@ -887,14 +942,14 @@ export const StepManager: React.FC<StepManagerProps> = ({
                                                 <span style={{
                                                     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                                                     color: 'white',
-                                                    fontSize: '10px',
-                                                    padding: '2px 6px',
-                                                    borderRadius: '10px',
+                                                    fontSize: '8px',
+                                                    padding: '1px 4px',
+                                                    borderRadius: '8px',
                                                     fontWeight: 'bold',
-                                                    letterSpacing: '0.5px',
+                                                    letterSpacing: '0.3px',
                                                     textShadow: '0 1px 2px rgba(0,0,0,0.2)',
                                                     boxShadow: '0 1px 3px rgba(102, 126, 234, 0.3)',
-                                                    minWidth: '60px',
+                                                    minWidth: '45px',
                                                     textAlign: 'center'
                                                 }}>
                                                     🧠 DEEP
@@ -902,7 +957,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                                             )}
                                         </div>
                                         <Text type="secondary" style={{
-                                            fontSize: '12px',
+                                            fontSize: '10px',
                                             display: 'block'
                                         }}>
                                             {stepTypeOptions.find(opt => opt.value === step.type)?.label}
@@ -924,7 +979,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                 onClose={closeAddDrawer}
                 maskClosable={false}
                 extra={
-                    <Button onClick={closeAddDrawer} style={{ borderRadius: '6px' }}>
+                    <Button onClick={closeAddDrawer} size="small" style={{ borderRadius: '4px', fontSize: '12px' }}>
                         取消
                     </Button>
                 }
@@ -932,7 +987,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                 <div style={{
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '20px',
+                    gap: '16px',
                     height: '100%'
                 }}>
                     <Select
@@ -940,7 +995,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                         value={currentStepType}
                         onChange={setCurrentStepType}
                         options={stepTypeOptions}
-                        size="large"
+                        size="middle"
                     />
 
                     {currentStepType !== 'sleep' && (
@@ -1054,7 +1109,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                         </div>
                     )}
 
-                    <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
+                    <div style={{ marginTop: 'auto', paddingTop: '16px' }}>
                         <Button
                             type="primary"
                             icon={<PlusOutlined />}
@@ -1064,12 +1119,12 @@ export const StepManager: React.FC<StepManagerProps> = ({
                                 (currentStepType === 'sleep' && !currentTimeout) ||
                                 (['aiInput', 'aiKeyboardPress'].includes(currentStepType) && !currentValue.trim())
                             }
-                            size="large"
+                            size="middle"
                             style={{
                                 width: '100%',
-                                borderRadius: '8px',
-                                height: '44px',
-                                fontSize: '16px',
+                                borderRadius: '6px',
+                                height: '36px',
+                                fontSize: '14px',
                                 fontWeight: 500
                             }}
                         >
@@ -1088,7 +1143,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                 onClose={closeEditDrawer}
                 maskClosable={false}
                 extra={
-                    <Button onClick={closeEditDrawer} style={{ borderRadius: '6px' }}>
+                    <Button onClick={closeEditDrawer} size="small" style={{ borderRadius: '4px', fontSize: '12px' }}>
                         取消
                     </Button>
                 }
@@ -1096,7 +1151,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                 <div style={{
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '20px',
+                    gap: '12px',
                     height: '100%'
                 }}>
                     <Select
@@ -1104,12 +1159,12 @@ export const StepManager: React.FC<StepManagerProps> = ({
                         value={currentStepType}
                         onChange={setCurrentStepType}
                         options={stepTypeOptions}
-                        size="large"
+                        size="middle"
                     />
 
                     {currentStepType !== 'sleep' && (
                         <div>
-                            <Text style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>
+                            <Text style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '12px' }}>
                                 {currentStepType === 'aiInput'
                                     ? "目标元素描述"
                                     : currentStepType === 'aiQuery'
@@ -1130,8 +1185,8 @@ export const StepManager: React.FC<StepManagerProps> = ({
                                 }
                                 value={currentPrompt}
                                 onChange={e => setCurrentPrompt(e.target.value)}
-                                rows={4}
-                                style={{ borderRadius: '8px' }}
+                                rows={3}
+                                style={{ borderRadius: '6px', fontSize: '12px' }}
                             />
                         </div>
                     )}
@@ -1204,21 +1259,22 @@ export const StepManager: React.FC<StepManagerProps> = ({
 
                     {currentStepType === 'sleep' && (
                         <div>
-                            <Text style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>
+                            <Text style={{ display: 'block', marginBottom: '6px', fontWeight: 500, fontSize: '12px' }}>
                                 等待时间
                             </Text>
                             <Input
                                 type="number"
+                                size="middle"
                                 placeholder="等待时间 (毫秒)"
                                 value={currentTimeout}
                                 onChange={e => setCurrentTimeout(Number(e.target.value))}
                                 addonAfter="ms"
-                                style={{ borderRadius: '8px' }}
+                                style={{ borderRadius: '6px', fontSize: '12px' }}
                             />
                         </div>
                     )}
 
-                    <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
+                    <div style={{ marginTop: 'auto', paddingTop: '16px' }}>
                         <Button
                             type="primary"
                             icon={<EditOutlined />}
@@ -1228,12 +1284,12 @@ export const StepManager: React.FC<StepManagerProps> = ({
                                 (currentStepType === 'sleep' && !currentTimeout) ||
                                 (['aiInput', 'aiKeyboardPress'].includes(currentStepType) && !currentValue.trim())
                             }
-                            size="large"
+                            size="middle"
                             style={{
                                 width: '100%',
-                                borderRadius: '8px',
-                                height: '44px',
-                                fontSize: '16px',
+                                borderRadius: '6px',
+                                height: '36px',
+                                fontSize: '14px',
                                 fontWeight: 500
                             }}
                         >
@@ -1252,7 +1308,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                 onClose={closeDecomposeDrawer}
                 maskClosable={false}
                 extra={
-                    <Button onClick={closeDecomposeDrawer} style={{ borderRadius: '6px' }}>
+                    <Button onClick={closeDecomposeDrawer} size="small" style={{ borderRadius: '4px', fontSize: '12px' }}>
                         取消
                     </Button>
                 }
@@ -1260,30 +1316,30 @@ export const StepManager: React.FC<StepManagerProps> = ({
                 <div style={{
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '20px',
+                    gap: '16px',
                     height: '100%'
                 }}>
                     <div style={{
-                        padding: '16px',
+                        padding: '12px',
                         background: 'linear-gradient(135deg, #f6f9fc 0%, #e9f4ff 100%)',
-                        borderRadius: '12px',
+                        borderRadius: '8px',
                         border: '1px solid #e1f0ff'
                     }}>
                         <div style={{
-                            fontSize: '14px',
+                            fontSize: '12px',
                             fontWeight: 500,
                             color: '#1a73e8',
-                            marginBottom: '8px',
+                            marginBottom: '6px',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '8px'
+                            gap: '6px'
                         }}>
                             AI 智能分解说明
                         </div>
                         <div style={{
-                            fontSize: '13px',
+                            fontSize: '11px',
                             color: '#5f6368',
-                            lineHeight: '1.5'
+                            lineHeight: '1.4'
                         }}>
                             输入自然语言描述的测试用例，AI 将使用纯文本分解方法自动分解为可执行的具体步骤。
                             <br />
@@ -1292,18 +1348,18 @@ export const StepManager: React.FC<StepManagerProps> = ({
                     </div>
 
                     <div>
-                        <Text style={{ display: 'block', marginBottom: '12px', fontWeight: 500, fontSize: '16px' }}>
+                        <Text style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '12px' }}>
                             测试用例描述
                         </Text>
                         <TextArea
                             placeholder="请输入自然语言描述的测试用例，如：&#10;• 登录应用并搜索商品信息&#10;• 打开设置页面，修改用户名并保存&#10;• 进入购物车，选择商品并结算"
                             value={testCaseInput}
                             onChange={(e) => setTestCaseInput(e.target.value)}
-                            rows={6}
+                            rows={5}
                             style={{
-                                borderRadius: '8px',
-                                fontSize: '14px',
-                                lineHeight: '1.6'
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                lineHeight: '1.5'
                             }}
                             maxLength={500}
                             showCount
@@ -1311,17 +1367,17 @@ export const StepManager: React.FC<StepManagerProps> = ({
                     </div>
 
                     <div style={{
-                        padding: '12px',
+                        padding: '10px',
                         background: '#fff7e6',
-                        borderRadius: '8px',
+                        borderRadius: '6px',
                         border: '1px solid #ffd591'
                     }}>
                         <div style={{
-                            fontSize: '13px',
+                            fontSize: '11px',
                             color: '#d46b08',
                             display: 'flex',
                             alignItems: 'flex-start',
-                            gap: '8px'
+                            gap: '6px'
                         }}>
                             <span>💡</span>
                             <div>
@@ -1336,15 +1392,18 @@ export const StepManager: React.FC<StepManagerProps> = ({
                         </div>
                     </div>
 
-                    <div style={{ marginTop: 'auto', paddingTop: '20px' }}>
+                    <div style={{ marginTop: 'auto', paddingTop: '16px' }}>
                         <Button
                             type="primary"
                             onClick={decomposeTestCase}
                             loading={isDecomposing}
                             disabled={!testCaseInput.trim()}
-                            size="large"
+                            size="middle"
                             style={{
-                                width: '100%'
+                                width: '100%',
+                                height: '36px',
+                                fontSize: '14px',
+                                borderRadius: '6px'
                             }}
                         >
                             {isDecomposing ? 'AI 分解中...' : '开始智能分解'}
