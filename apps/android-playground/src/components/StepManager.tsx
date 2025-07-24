@@ -977,7 +977,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                 width={480}
                 open={addDrawerOpen}
                 onClose={closeAddDrawer}
-                maskClosable={false}
+                maskClosable={true}
                 extra={
                     <Button onClick={closeAddDrawer} size="small" style={{ borderRadius: '4px', fontSize: '12px' }}>
                         取消
@@ -1141,7 +1141,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                 width={480}
                 open={editDrawerOpen}
                 onClose={closeEditDrawer}
-                maskClosable={false}
+                maskClosable={true}
                 extra={
                     <Button onClick={closeEditDrawer} size="small" style={{ borderRadius: '4px', fontSize: '12px' }}>
                         取消
@@ -1306,7 +1306,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                 width={520}
                 open={decomposeDrawerOpen}
                 onClose={closeDecomposeDrawer}
-                maskClosable={false}
+                maskClosable={true}
                 extra={
                     <Button onClick={closeDecomposeDrawer} size="small" style={{ borderRadius: '4px', fontSize: '12px' }}>
                         取消
@@ -1326,20 +1326,20 @@ export const StepManager: React.FC<StepManagerProps> = ({
                         border: '1px solid #e1f0ff'
                     }}>
                         <div style={{
-                            fontSize: '12px',
+                            fontSize: '14px',
                             fontWeight: 500,
                             color: '#1a73e8',
-                            marginBottom: '6px',
+                            marginBottom: '8px',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '6px'
+                            gap: '8px'
                         }}>
                             AI 智能分解说明
                         </div>
                         <div style={{
-                            fontSize: '11px',
+                            fontSize: '13px',
                             color: '#5f6368',
-                            lineHeight: '1.4'
+                            lineHeight: '1.5'
                         }}>
                             输入自然语言描述的测试用例，AI 将使用纯文本分解方法自动分解为可执行的具体步骤。
                             <br />
@@ -1348,7 +1348,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                     </div>
 
                     <div>
-                        <Text style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '12px' }}>
+                        <Text style={{ display: 'block', marginBottom: '8px', fontWeight: 500, fontSize: '14px' }}>
                             测试用例描述
                         </Text>
                         <TextArea
@@ -1358,8 +1358,8 @@ export const StepManager: React.FC<StepManagerProps> = ({
                             rows={5}
                             style={{
                                 borderRadius: '6px',
-                                fontSize: '12px',
-                                lineHeight: '1.5'
+                                fontSize: '14px',
+                                lineHeight: '1.6'
                             }}
                             maxLength={500}
                             showCount
@@ -1373,7 +1373,7 @@ export const StepManager: React.FC<StepManagerProps> = ({
                         border: '1px solid #ffd591'
                     }}>
                         <div style={{
-                            fontSize: '11px',
+                            fontSize: '13px',
                             color: '#d46b08',
                             display: 'flex',
                             alignItems: 'flex-start',
