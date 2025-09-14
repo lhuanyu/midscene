@@ -2,6 +2,30 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { assert, ifInBrowser, ifInWorker } from '@midscene/shared/utils';
 
+// previous defined yaml flow, as a helper
+interface MidsceneYamlFlowItemAIInput extends LocateOption {
+  // previous version
+  // aiInput: string; // value to input
+  // locate: TUserPrompt; // where to input
+  aiInput: TUserPrompt | undefined; // where to input
+  value: string; // value to input
+}
+
+interface MidsceneYamlFlowItemAIKeyboardPress extends LocateOption {
+  // previous version
+  // aiKeyboardPress: string;
+  // locate?: TUserPrompt; // where to press, optional
+  aiKeyboardPress: TUserPrompt | undefined; // where to press
+  keyName: string; // key to press
+}
+
+interface MidsceneYamlFlowItemAIScroll extends LocateOption, ScrollParam {
+  // previous version
+  // aiScroll: null;
+  // locate?: TUserPrompt; // which area to scroll, optional
+  aiScroll: TUserPrompt | undefined; // which area to scroll
+}
+
 import type { Agent } from '@/agent/agent';
 import type {
   DeviceAction,
@@ -11,12 +35,9 @@ import type {
   MidsceneYamlFlowItemAIAsk,
   MidsceneYamlFlowItemAIAssert,
   MidsceneYamlFlowItemAIBoolean,
-  MidsceneYamlFlowItemAIInput,
-  MidsceneYamlFlowItemAIKeyboardPress,
   MidsceneYamlFlowItemAILocate,
   MidsceneYamlFlowItemAINumber,
   MidsceneYamlFlowItemAIQuery,
-  MidsceneYamlFlowItemAIScroll,
   MidsceneYamlFlowItemAIString,
   MidsceneYamlFlowItemAIWaitFor,
   MidsceneYamlFlowItemEvaluateJavaScript,
@@ -26,6 +47,7 @@ import type {
   MidsceneYamlScriptEnv,
   ScriptPlayerStatusValue,
   ScriptPlayerTaskStatus,
+  ScrollParam,
   TUserPrompt,
 } from '@/index';
 import { getMidsceneRunSubDir } from '@midscene/shared/common';
@@ -59,12 +81,15 @@ export class ScriptPlayer<T extends MidsceneYamlScriptEnv> {
   ) {
     this.scriptPath = scriptPath;
     this.result = {};
-    this.target = script.target || script.web || script.android;
+    this.target =
+      script.target || script.web || script.android || script.config;
 
     if (ifInBrowser || ifInWorker) {
       this.output = undefined;
+      debug('output is undefined in browser or worker');
     } else if (this.target?.output) {
       this.output = resolve(process.cwd(), this.target.output);
+      debug('setting output by config.output', this.output);
     } else {
       const scriptName = this.scriptPath
         ? basename(this.scriptPath, '.yaml').replace(/\.(ya?ml)$/i, '')
@@ -73,6 +98,7 @@ export class ScriptPlayer<T extends MidsceneYamlScriptEnv> {
         getMidsceneRunSubDir('output'),
         `${scriptName}-${Date.now()}.json`,
       );
+      debug('setting output by script path', this.output);
     }
 
     if (ifInBrowser || ifInWorker) {
@@ -372,6 +398,8 @@ export class ScriptPlayer<T extends MidsceneYamlScriptEnv> {
           // New format - aiKeyboardPress is the prompt, key is the key
           keyName = keyboardPressTask.keyName;
           locatePrompt = aiKeyboardPress;
+        } else {
+          keyName = aiKeyboardPress as string;
         }
 
         await agent.callActionInActionSpace('KeyboardPress', {

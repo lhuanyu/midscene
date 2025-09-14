@@ -41,12 +41,12 @@ import {
 } from '../yaml/index';
 
 import type { AbstractInterface } from '@/device';
+import type { AgentOpt } from '@/types';
 import {
-  type IModelPreferences,
   MIDSCENE_CACHE,
-  type TModelConfigFn,
+  ModelConfigManager,
   globalConfigManager,
-  vlLocateMode,
+  globalModelConfigManager,
 } from '@midscene/shared/env';
 import { getDebug } from '@midscene/shared/logger';
 import { assert } from '@midscene/shared/utils';
@@ -81,22 +81,6 @@ const defaultInsightExtractOption: InsightExtractOption = {
   screenshotIncluded: true,
 };
 
-export interface AgentOpt {
-  testId?: string;
-  cacheId?: string;
-  groupName?: string;
-  groupDescription?: string;
-  /* if auto generate report, default true */
-  generateReport?: boolean;
-  /* if auto print report msg, default true */
-  autoPrintReportMsg?: boolean;
-  onTaskStartTip?: OnTaskStartTip;
-  aiActionContext?: string;
-  /* custom report file name */
-  reportFileName?: string;
-  modelConfig?: TModelConfigFn;
-}
-
 export class Agent<
   InterfaceType extends AbstractInterface = AbstractInterface,
 > {
@@ -127,6 +111,8 @@ export class Agent<
 
   destroyed = false;
 
+  modelConfigManager: ModelConfigManager;
+
   /**
    * Frozen page context for consistent AI operations
    */
@@ -148,13 +134,15 @@ export class Agent<
       },
       opts || {},
     );
+
     if (opts?.modelConfig && typeof opts?.modelConfig !== 'function') {
       throw new Error(
         `opts.modelConfig must be one of function or undefined, but got ${typeof opts?.modelConfig}`,
       );
     }
-
-    globalConfigManager.init(opts?.modelConfig);
+    this.modelConfigManager = opts?.modelConfig
+      ? new ModelConfigManager(opts.modelConfig)
+      : globalModelConfigManager;
 
     this.onTaskStartTip = this.opts.onTaskStartTip;
 
@@ -195,7 +183,9 @@ export class Agent<
       return await this.interface.getContext();
     } else {
       debug('Using commonContextParser for action:', action);
-      return await commonContextParser(this.interface);
+      return await commonContextParser(this.interface, {
+        uploadServerUrl: this.modelConfigManager.getUploadTestServerUrl(),
+      });
     }
   }
 
@@ -204,6 +194,11 @@ export class Agent<
   }
 
   async setAIActionContext(prompt: string) {
+    if (this.opts.aiActionContext) {
+      console.warn(
+        'aiActionContext is already set, and it is called again, will override the previous setting',
+      );
+    }
     this.opts.aiActionContext = prompt;
   }
 
@@ -290,7 +285,7 @@ export class Agent<
     type: string,
     opt?: T, // and all other action params
   ) {
-    debug('callActionInActionSpace', type, ',', opt, ',', opt);
+    debug('callActionInActionSpace', type, ',', opt);
 
     const actionPlan: PlanningAction<T> = {
       type: type as any,
@@ -308,7 +303,14 @@ export class Agent<
       locateParamStr((opt as any)?.locate || {}),
     );
 
-    const { output, executor } = await this.taskExecutor.runPlans(title, plans);
+    // assume all operation in action space is related to locating
+    const modelConfig = this.modelConfigManager.getModelConfig('grounding');
+
+    const { output, executor } = await this.taskExecutor.runPlans(
+      title,
+      plans,
+      modelConfig,
+    );
     await this.afterTaskRunning(executor);
     return output;
   }
@@ -356,7 +358,7 @@ export class Agent<
   // New signature, always use locatePrompt as the first param
   async aiInput(
     locatePrompt: TUserPrompt,
-    opt: LocateOption & { value: string }, // AndroidDeviceInputOpt &
+    opt: LocateOption & { value: string } & { autoDismissKeyboard?: boolean },
   ): Promise<any>;
 
   // Legacy signature - deprecated
@@ -366,7 +368,7 @@ export class Agent<
   async aiInput(
     value: string,
     locatePrompt: TUserPrompt,
-    opt?: LocateOption, // AndroidDeviceInputOpt &
+    opt?: LocateOption & { autoDismissKeyboard?: boolean }, // AndroidDeviceInputOpt &
   ): Promise<any>;
 
   // Implementation
@@ -374,14 +376,14 @@ export class Agent<
     locatePromptOrValue: TUserPrompt | string,
     locatePromptOrOpt:
       | TUserPrompt
-      | (LocateOption & { value: string }) // AndroidDeviceInputOpt &
+      | (LocateOption & { value: string } & { autoDismissKeyboard?: boolean }) // AndroidDeviceInputOpt &
       | undefined,
     optOrUndefined?: LocateOption, // AndroidDeviceInputOpt &
   ) {
     let value: string;
     let locatePrompt: TUserPrompt;
     let opt:
-      | (LocateOption & { value: string }) // AndroidDeviceInputOpt &
+      | (LocateOption & { value: string } & { autoDismissKeyboard?: boolean }) // AndroidDeviceInputOpt &
       | undefined;
 
     // Check if using new signature (first param is locatePrompt, second has value)
@@ -395,6 +397,7 @@ export class Agent<
       const optWithValue = locatePromptOrOpt as LocateOption & {
         // AndroidDeviceInputOpt &
         value: string;
+        autoDismissKeyboard?: boolean;
       };
       value = optWithValue.value;
       opt = optWithValue;
@@ -541,16 +544,43 @@ export class Agent<
     });
   }
 
+  // async aiLongPress(locatePrompt: TUserPrompt, opt?: LocateOption & PlanningActionParamLongPress) {
+  //   const detailedLocateParam = buildDetailedLocateParam(
+  //     locatePrompt,
+  //     opt,
+  //   );
+
+  //   return this.callActionInActionSpace('LongPress', {
+  //     ...(opt || {}),
+  //     locate: detailedLocateParam,
+  //   });
+  // }
+
+  // async aiSwipe(
+  //   locatePrompt?: TUserPrompt,
+  //   opt?: LocateOption & PlanningActionParamSwipe,
+  // ) {
+  //   const detailedLocateParam = locatePrompt
+  //     ? buildDetailedLocateParam(locatePrompt, opt)
+  //     : undefined;
+
+  //   return this.callActionInActionSpace('Swipe', {
+  //     ...(opt || {}),
+  //     locate: detailedLocateParam,
+  //   });
+  // }
+
   async aiAction(
     taskPrompt: string,
     opt?: {
       cacheable?: boolean;
     },
   ) {
-    const modelPreferences: IModelPreferences = { intent: 'planning' };
+    const modelConfig = this.modelConfigManager.getModelConfig('planning');
+
     const cacheable = opt?.cacheable;
     // if vlm-ui-tars, plan cache is not used
-    const isVlmUiTars = vlLocateMode(modelPreferences) === 'vlm-ui-tars';
+    const isVlmUiTars = modelConfig.vlMode === 'vlm-ui-tars';
     const matchedCache =
       isVlmUiTars || cacheable === false
         ? undefined
@@ -570,8 +600,12 @@ export class Agent<
     }
 
     const { output, executor } = await (isVlmUiTars
-      ? this.taskExecutor.actionToGoal(taskPrompt)
-      : this.taskExecutor.action(taskPrompt, this.opts.aiActionContext));
+      ? this.taskExecutor.actionToGoal(taskPrompt, modelConfig)
+      : this.taskExecutor.action(
+          taskPrompt,
+          modelConfig,
+          this.opts.aiActionContext,
+        ));
 
     // update cache
     if (this.taskCache && output?.yamlFlow && cacheable !== false) {
@@ -602,8 +636,14 @@ export class Agent<
     demand: InsightExtractParam,
     opt: InsightExtractOption = defaultInsightExtractOption,
   ): Promise<ReturnType> {
+    const modelConfig = this.modelConfigManager.getModelConfig('VQA');
     const { output, executor } =
-      await this.taskExecutor.createTypeQueryExecution('Query', demand, opt);
+      await this.taskExecutor.createTypeQueryExecution(
+        'Query',
+        demand,
+        modelConfig,
+        opt,
+      );
     await this.afterTaskRunning(executor);
     return output as ReturnType;
   }
@@ -612,11 +652,14 @@ export class Agent<
     prompt: TUserPrompt,
     opt: InsightExtractOption = defaultInsightExtractOption,
   ): Promise<boolean> {
+    const modelConfig = this.modelConfigManager.getModelConfig('VQA');
+
     const { textPrompt, multimodalPrompt } = parsePrompt(prompt);
     const { output, executor } =
       await this.taskExecutor.createTypeQueryExecution(
         'Boolean',
         textPrompt,
+        modelConfig,
         opt,
         multimodalPrompt,
       );
@@ -628,11 +671,14 @@ export class Agent<
     prompt: TUserPrompt,
     opt: InsightExtractOption = defaultInsightExtractOption,
   ): Promise<number> {
+    const modelConfig = this.modelConfigManager.getModelConfig('VQA');
+
     const { textPrompt, multimodalPrompt } = parsePrompt(prompt);
     const { output, executor } =
       await this.taskExecutor.createTypeQueryExecution(
         'Number',
         textPrompt,
+        modelConfig,
         opt,
         multimodalPrompt,
       );
@@ -644,11 +690,14 @@ export class Agent<
     prompt: TUserPrompt,
     opt: InsightExtractOption = defaultInsightExtractOption,
   ): Promise<string> {
+    const modelConfig = this.modelConfigManager.getModelConfig('VQA');
+
     const { textPrompt, multimodalPrompt } = parsePrompt(prompt);
     const { output, executor } =
       await this.taskExecutor.createTypeQueryExecution(
         'String',
         textPrompt,
+        modelConfig,
         opt,
         multimodalPrompt,
       );
@@ -693,7 +742,12 @@ export class Agent<
         'deepThink',
         deepThink,
       );
-      const text = await this.insight.describe(center, { deepThink });
+      // use same intent as aiLocate
+      const modelConfig = this.modelConfigManager.getModelConfig('grounding');
+
+      const text = await this.insight.describe(center, modelConfig, {
+        deepThink,
+      });
       debug('aiDescribe text', text);
       assert(text.description, `failed to describe element at [${center}]`);
       resultPrompt = text.description;
@@ -750,9 +804,12 @@ export class Agent<
     assert(locateParam, 'cannot get locate param for aiLocate');
     const locatePlan = locatePlanForLocate(locateParam);
     const plans = [locatePlan];
+    const modelConfig = this.modelConfigManager.getModelConfig('grounding');
+
     const { executor, output } = await this.taskExecutor.runPlans(
       taskTitleStr('Locate', locateParamStr(locateParam)),
       plans,
+      modelConfig,
     );
     await this.afterTaskRunning(executor);
 
@@ -772,6 +829,8 @@ export class Agent<
     msg?: string,
     opt?: AgentAssertOpt & InsightExtractOption,
   ) {
+    const modelConfig = this.modelConfigManager.getModelConfig('VQA');
+
     const insightOpt: InsightExtractOption = {
       domIncluded: opt?.domIncluded ?? defaultInsightExtractOption.domIncluded,
       screenshotIncluded:
@@ -784,13 +843,14 @@ export class Agent<
 
     const { output, executor, thought } = await this.taskExecutor.assert(
       assertion,
+      modelConfig,
       insightOpt,
     );
     await this.afterTaskRunning(executor, true);
 
     const message = output
       ? undefined
-      : `Assertion failed: ${msg || assertion}\nReason: ${
+      : `Assertion failed: ${msg || (typeof assertion === 'string' ? assertion : assertion.prompt)}\nReason: ${
           thought || executor.latestErrorTask()?.error || '(no_reason)'
         }`;
 
@@ -808,10 +868,15 @@ export class Agent<
   }
 
   async aiWaitFor(assertion: TUserPrompt, opt?: AgentWaitForOpt) {
-    const { executor } = await this.taskExecutor.waitFor(assertion, {
-      timeoutMs: opt?.timeoutMs || 15 * 1000,
-      checkIntervalMs: opt?.checkIntervalMs || 3 * 1000,
-    });
+    const modelConfig = this.modelConfigManager.getModelConfig('default');
+    const { executor } = await this.taskExecutor.waitFor(
+      assertion,
+      {
+        timeoutMs: opt?.timeoutMs || 15 * 1000,
+        checkIntervalMs: opt?.checkIntervalMs || 3 * 1000,
+      },
+      modelConfig,
+    );
     await this.afterTaskRunning(executor, true);
 
     if (executor.isInErrorState()) {
@@ -852,7 +917,7 @@ export class Agent<
   async runYaml(yamlScriptContent: string): Promise<{
     result: Record<string, any>;
   }> {
-    const script = parseYamlScript(yamlScriptContent, 'yaml', true);
+    const script = parseYamlScript(yamlScriptContent, 'yaml');
     const player = new ScriptPlayer(script, async () => {
       return { agent: this, freeFn: [] };
     });
@@ -985,3 +1050,10 @@ export class Agent<
     debug('Page context unfrozen successfully');
   }
 }
+
+export const createAgent = (
+  interfaceInstance: AbstractInterface,
+  opts?: AgentOpt,
+) => {
+  return new Agent(interfaceInstance, opts);
+};

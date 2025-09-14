@@ -6,6 +6,7 @@ import { pluginNodePolyfill } from '@rsbuild/plugin-node-polyfill';
 import { pluginReact } from '@rsbuild/plugin-react';
 import { pluginSvgr } from '@rsbuild/plugin-svgr';
 import { pluginTypeCheck } from '@rsbuild/plugin-type-check';
+import { version as playgroundVersion } from '../../packages/playground/package.json';
 
 const copyAndroidPlaygroundStatic = () => ({
   name: 'copy-android-playground-static',
@@ -42,6 +43,9 @@ export default defineConfig({
         entry: {
           index: './src/index.tsx',
         },
+        define: {
+          __APP_VERSION__: JSON.stringify(playgroundVersion),
+        },
       },
       output: {
         target: 'web',
@@ -58,10 +62,13 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      async_hooks: path.join(__dirname, './src/scripts/blank_polyfill.ts'),
+      async_hooks: path.join(
+        __dirname,
+        '../../packages/shared/src/polyfills/async-hooks.ts',
+      ),
       'node:async_hooks': path.join(
         __dirname,
-        './src/scripts/blank_polyfill.ts',
+        '../../packages/shared/src/polyfills/async-hooks.ts',
       ),
       react: path.resolve(__dirname, 'node_modules/react'),
       'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),

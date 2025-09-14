@@ -6,7 +6,6 @@ import {
 import { buildYamlFlowFromPlans } from '@/ai-model/common';
 import {
   MIDSCENE_USE_DOUBAO_VISION,
-  MIDSCENE_USE_QWEN_VL,
   OPENAI_API_KEY,
   OPENAI_BASE_URL,
 } from '@midscene/shared/env';
@@ -57,9 +56,7 @@ describe('llm planning - doubao', () => {
       bbox_2d: [923, 123, 123, 123] as [number, number, number, number],
     };
 
-    const filledLocate = fillBboxParam(locate, 1000, 1000, {
-      intent: 'grounding',
-    });
+    const filledLocate = fillBboxParam(locate, 1000, 1000, 'doubao-vision');
     expect(filledLocate).toEqual({
       id: 'test',
       prompt: 'test',

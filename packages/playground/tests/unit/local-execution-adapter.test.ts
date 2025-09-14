@@ -27,7 +27,11 @@ describe('LocalExecutionAdapter', () => {
       callActionInActionSpace: vi.fn(),
       onTaskStartTip: vi.fn(),
       destroy: vi.fn(),
-    };
+      dumpDataString: vi.fn().mockReturnValue('{}'),
+      reportHTMLString: vi.fn().mockReturnValue(''),
+      writeOutActionDumps: vi.fn(),
+      resetDump: vi.fn(),
+    } as unknown as PlaygroundAgent;
     adapter = new LocalExecutionAdapter(mockAgent);
   });
 
@@ -140,9 +144,12 @@ describe('LocalExecutionAdapter', () => {
         actionSpace: vi.fn().mockResolvedValue(mockActions),
       };
 
+      // Make sure the agent doesn't have getActionSpace, so it falls back to context
+      (mockAgent as any).getActionSpace = undefined;
+
       const result = await adapter.getActionSpace(mockPage);
 
-      expect(result).toBe(mockActions);
+      expect(result).toEqual(mockActions);
       expect(mockPage.actionSpace).toHaveBeenCalled();
     });
   });
@@ -180,7 +187,12 @@ describe('LocalExecutionAdapter', () => {
 
       const result = await adapter.executeAction('click', value, options);
 
-      expect(result).toBe('test result');
+      expect(result).toEqual({
+        result: 'test result',
+        dump: {},
+        reportHTML: null,
+        error: null,
+      });
       expect(common.executeAction).toHaveBeenCalledWith(
         mockAgent,
         'click',
@@ -191,7 +203,12 @@ describe('LocalExecutionAdapter', () => {
     });
 
     it('should use empty actionSpace when agent has no getActionSpace', async () => {
-      const agentWithoutActionSpace: PlaygroundAgent = {};
+      const agentWithoutActionSpace: PlaygroundAgent = {
+        dumpDataString: () => '{}',
+        reportHTMLString: () => '',
+        writeOutActionDumps: () => {},
+        resetDump: () => {},
+      };
       const localAdapter = new LocalExecutionAdapter(agentWithoutActionSpace);
 
       const value: FormValue = { type: 'click', prompt: 'click button' };
@@ -227,19 +244,22 @@ describe('LocalExecutionAdapter', () => {
       const originalCallback = vi.fn();
       mockAgent.onTaskStartTip = originalCallback;
 
+      let progress: { tip?: string };
+      vi.mocked(common.executeAction).mockImplementation(async (agent) => {
+        if (agent.onTaskStartTip) {
+          agent.onTaskStartTip('Processing...');
+        }
+        progress = await adapter.getTaskProgress('request-123');
+        return 'test result';
+      });
+
       const value: FormValue = { type: 'click', prompt: 'click button' };
       const options: ExecutionOptions = { requestId: 'request-123' };
 
       await adapter.executeAction('click', value, options);
 
-      // Simulate a task tip being called
-      if (mockAgent.onTaskStartTip) {
-        mockAgent.onTaskStartTip('Processing...');
-      }
-
       // Check that the tip is stored
-      const progress = await adapter.getTaskProgress('request-123');
-      expect(progress.tip).toBe('Processing...');
+      expect(progress!.tip).toBe('Processing...');
 
       // Check that original callback was called
       expect(originalCallback).toHaveBeenCalledWith('Processing...');

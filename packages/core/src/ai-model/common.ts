@@ -10,28 +10,17 @@ import type {
 } from '@/types';
 import { assert } from '@midscene/shared/utils';
 
-import type {
-  ChatCompletionSystemMessageParam,
-  ChatCompletionUserMessageParam,
-} from 'openai/resources/index';
-import { callToGetJSONObject } from './service-caller/index';
+import type { ChatCompletionMessageParam } from 'openai/resources/index';
 
 import type { PlanningLocateParam } from '@/types';
 import { NodeType } from '@midscene/shared/constants';
-import {
-  type IModelPreferences,
-  getModelName,
-  vlLocateMode,
-} from '@midscene/shared/env';
+import type { TVlModeTypes } from '@midscene/shared/env';
 import { treeToList } from '@midscene/shared/extractor';
 import { compositeElementInfoImg } from '@midscene/shared/img';
 import { getDebug } from '@midscene/shared/logger';
 import { z } from 'zod';
 
-export type AIArgs = [
-  ChatCompletionSystemMessageParam,
-  ...ChatCompletionUserMessageParam[],
-];
+export type AIArgs = ChatCompletionMessageParam[];
 
 export enum AIActionType {
   ASSERT = 0,
@@ -39,23 +28,6 @@ export enum AIActionType {
   EXTRACT_DATA = 2,
   PLAN = 3,
   DESCRIBE_ELEMENT = 4,
-}
-
-export async function callAiFn<T>(
-  msgs: AIArgs,
-  AIActionTypeValue: AIActionType,
-  modelPreferences: IModelPreferences,
-): Promise<{ content: T; usage?: AIUsageInfo }> {
-  const jsonObject = await callToGetJSONObject<T>(
-    msgs,
-    AIActionTypeValue,
-    modelPreferences,
-  );
-
-  return {
-    content: jsonObject.content,
-    usage: jsonObject.usage,
-  };
 }
 
 const defaultBboxSize = 20; // must be even number
@@ -66,7 +38,7 @@ export function fillBboxParam(
   locate: PlanningLocateParam,
   width: number,
   height: number,
-  modelPreferences: IModelPreferences,
+  vlMode: TVlModeTypes | undefined,
 ) {
   // The Qwen model might have hallucinations of naming bbox as bbox_2d.
   if ((locate as any).bbox_2d && !locate?.bbox) {
@@ -76,7 +48,7 @@ export function fillBboxParam(
   }
 
   if (locate?.bbox) {
-    locate.bbox = adaptBbox(locate.bbox, width, height, modelPreferences);
+    locate.bbox = adaptBbox(locate.bbox, width, height, vlMode);
   }
 
   return locate;
@@ -204,16 +176,13 @@ export function adaptBbox(
   bbox: number[],
   width: number,
   height: number,
-  modelPreferences: IModelPreferences,
+  vlMode: TVlModeTypes | undefined,
 ): [number, number, number, number] {
-  if (
-    vlLocateMode(modelPreferences) === 'doubao-vision' ||
-    vlLocateMode(modelPreferences) === 'vlm-ui-tars'
-  ) {
+  if (vlMode === 'doubao-vision' || vlMode === 'vlm-ui-tars') {
     return adaptDoubaoBbox(bbox, width, height);
   }
 
-  if (vlLocateMode(modelPreferences) === 'gemini') {
+  if (vlMode === 'gemini') {
     return adaptGeminiBbox(bbox, width, height);
   }
 
@@ -236,34 +205,48 @@ export function adaptBboxToRect(
   bbox: number[],
   width: number,
   height: number,
-  modelPreferences: IModelPreferences,
   offsetX = 0,
   offsetY = 0,
+  vlMode?: TVlModeTypes | undefined,
 ): Rect {
   debugInspectUtils('adaptBboxToRect', bbox, width, height, offsetX, offsetY);
-  const [left, top, right, bottom] = adaptBbox(
-    bbox,
-    width,
-    height,
-    modelPreferences,
-  );
+  const [left, top, right, bottom] = adaptBbox(bbox, width, height, vlMode);
+
+  // Calculate initial rect dimensions
+  const rectLeft = left;
+  const rectTop = top;
+  let rectWidth = right - left;
+  let rectHeight = bottom - top;
+
+  // Ensure the rect doesn't exceed image boundaries
+  // If right edge exceeds width, adjust the width
+  if (rectLeft + rectWidth > width) {
+    rectWidth = width - rectLeft;
+  }
+
+  // If bottom edge exceeds height, adjust the height
+  if (rectTop + rectHeight > height) {
+    rectHeight = height - rectTop;
+  }
+
+  // Ensure minimum dimensions (width and height should be at least 1)
+  rectWidth = Math.max(1, rectWidth);
+  rectHeight = Math.max(1, rectHeight);
+
   const rect = {
-    left: left + offsetX,
-    top: top + offsetY,
-    width: right - left,
-    height: bottom - top,
+    left: rectLeft + offsetX,
+    top: rectTop + offsetY,
+    width: rectWidth,
+    height: rectHeight,
   };
   debugInspectUtils('adaptBboxToRect, result=', rect);
   return rect;
 }
 
 let warned = false;
-export function warnGPT4oSizeLimit(
-  size: Size,
-  modelPreferences: IModelPreferences,
-) {
+export function warnGPT4oSizeLimit(size: Size, modelName: string) {
   if (warned) return;
-  if (getModelName(modelPreferences)?.toLowerCase().includes('gpt-4o')) {
+  if (modelName.toLowerCase().includes('gpt-4o')) {
     const warningMsg = `GPT-4o has a maximum image input size of 2000x768 or 768x2000, but got ${size.width}x${size.height}. Please set your interface to a smaller resolution. Otherwise, the result may be inaccurate.`;
 
     if (
@@ -298,12 +281,12 @@ export function mergeRects(rects: Rect[]) {
 export function expandSearchArea(
   rect: Rect,
   screenSize: Size,
-  modelPreferences: IModelPreferences,
+  vlMode: TVlModeTypes | undefined,
 ) {
-  const minEdgeSize =
-    vlLocateMode(modelPreferences) === 'doubao-vision' ? 500 : 300;
+  const minEdgeSize = vlMode === 'doubao-vision' ? 500 : 300;
   const defaultPadding = 160;
 
+  // Calculate padding needed to reach minimum edge size
   const paddingSizeHorizontal =
     rect.width < minEdgeSize
       ? Math.ceil((minEdgeSize - rect.width) / 2)
@@ -312,16 +295,44 @@ export function expandSearchArea(
     rect.height < minEdgeSize
       ? Math.ceil((minEdgeSize - rect.height) / 2)
       : defaultPadding;
-  rect.left = Math.max(0, rect.left - paddingSizeHorizontal);
-  rect.width = Math.min(
-    rect.width + paddingSizeHorizontal * 2,
-    screenSize.width - rect.left,
-  );
-  rect.top = Math.max(0, rect.top - paddingSizeVertical);
-  rect.height = Math.min(
-    rect.height + paddingSizeVertical * 2,
-    screenSize.height - rect.top,
-  );
+
+  // Calculate new dimensions (ensure minimum edge size)
+  let newWidth = Math.max(minEdgeSize, rect.width + paddingSizeHorizontal * 2);
+  let newHeight = Math.max(minEdgeSize, rect.height + paddingSizeVertical * 2);
+
+  // Calculate initial position with padding
+  let newLeft = rect.left - paddingSizeHorizontal;
+  let newTop = rect.top - paddingSizeVertical;
+
+  // Ensure the rect doesn't exceed screen boundaries by adjusting position
+  // If the rect goes beyond the right edge, shift it left
+  if (newLeft + newWidth > screenSize.width) {
+    newLeft = screenSize.width - newWidth;
+  }
+
+  // If the rect goes beyond the bottom edge, shift it up
+  if (newTop + newHeight > screenSize.height) {
+    newTop = screenSize.height - newHeight;
+  }
+
+  // Ensure the rect doesn't go beyond the left/top edges
+  newLeft = Math.max(0, newLeft);
+  newTop = Math.max(0, newTop);
+
+  // If after position adjustment, the rect still exceeds screen boundaries,
+  // clamp the dimensions to fit within screen
+  if (newLeft + newWidth > screenSize.width) {
+    newWidth = screenSize.width - newLeft;
+  }
+  if (newTop + newHeight > screenSize.height) {
+    newHeight = screenSize.height - newTop;
+  }
+
+  rect.left = newLeft;
+  rect.top = newTop;
+  rect.width = newWidth;
+  rect.height = newHeight;
+
   return rect;
 }
 

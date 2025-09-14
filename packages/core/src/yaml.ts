@@ -1,5 +1,5 @@
 import type { TUserPrompt } from './ai-model/common';
-import type { Rect } from './types';
+import type { AgentOpt, Rect } from './types';
 import type { BaseElement, UIContext } from './types';
 
 export interface LocateOption {
@@ -38,9 +38,14 @@ export interface ScrollParam {
 export interface MidsceneYamlScript {
   // @deprecated
   target?: MidsceneYamlScriptWebEnv;
+
   web?: MidsceneYamlScriptWebEnv;
   android?: MidsceneYamlScriptAndroidEnv;
-  ios?: MidsceneYamlScriptIOSEnv;
+
+  interface?: MidsceneYamlScriptEnvGeneralInterface;
+  config?: MidsceneYamlScriptConfig;
+  agent?: MidsceneYamlScriptAgentOpt;
+
   tasks: MidsceneYamlTask[];
 }
 
@@ -50,13 +55,23 @@ export interface MidsceneYamlTask {
   continueOnError?: boolean;
 }
 
-export interface MidsceneYamlScriptEnvBase {
+export type MidsceneYamlScriptAgentOpt = Pick<AgentOpt, 'aiActionContext'>;
+
+export interface MidsceneYamlScriptConfig {
   output?: string;
   unstableLogContent?: boolean | string;
-  aiActionContext?: string;
 }
 
-export interface MidsceneYamlScriptWebEnv extends MidsceneYamlScriptEnvBase {
+export interface MidsceneYamlScriptEnvGeneralInterface {
+  // this will work as `const {...} = import('...'); const interface = new ...(param)`
+  module: string;
+  export?: string;
+  param?: Record<string, any>;
+}
+
+export interface MidsceneYamlScriptWebEnv
+  extends MidsceneYamlScriptConfig,
+  MidsceneYamlScriptAgentOpt {
   // for web only
   serve?: string;
   url: string;
@@ -79,8 +94,7 @@ export interface MidsceneYamlScriptWebEnv extends MidsceneYamlScriptEnvBase {
   closeNewTabsAfterDisconnect?: boolean;
 }
 
-export interface MidsceneYamlScriptAndroidEnv
-  extends MidsceneYamlScriptEnvBase {
+export interface MidsceneYamlScriptAndroidEnv extends MidsceneYamlScriptConfig {
   // The Android device ID to connect to, optional, will use the first device if not specified
   deviceId?: string;
 
@@ -88,28 +102,10 @@ export interface MidsceneYamlScriptAndroidEnv
   launch?: string;
 }
 
-export interface MidsceneYamlScriptIOSEnv extends MidsceneYamlScriptEnvBase {
-  // The URL or app to launch, optional, will use the current screen if not specified
-  launch?: string;
-
-  // PyAutoGUI server configuration
-  serverUrl?: string;
-  serverPort?: number;
-  autoDismissKeyboard?: boolean;
-
-  // iOS device mirroring configuration to define the mirror position and size
-  mirrorConfig?: {
-    mirrorX: number;
-    mirrorY: number;
-    mirrorWidth: number;
-    mirrorHeight: number;
-  };
-}
-
 export type MidsceneYamlScriptEnv =
   | MidsceneYamlScriptWebEnv
   | MidsceneYamlScriptAndroidEnv
-  | MidsceneYamlScriptIOSEnv;
+  | MidsceneYamlScriptEnvGeneralInterface;
 
 export interface MidsceneYamlFlowItemAIAction {
   ai?: string; // this is the shortcut for aiAction
@@ -159,47 +155,6 @@ export interface MidsceneYamlFlowItemAIWaitFor {
   timeout?: number;
 }
 
-export interface MidsceneYamlFlowItemAITap extends LocateOption {
-  aiTap: TUserPrompt;
-}
-
-export interface MidsceneYamlFlowItemAIRightClick extends LocateOption {
-  aiRightClick: TUserPrompt;
-}
-
-export interface MidsceneYamlFlowItemAIDoubleClick extends LocateOption {
-  aiDoubleClick: TUserPrompt;
-}
-
-export interface MidsceneYamlFlowItemAIHover extends LocateOption {
-  aiHover: TUserPrompt;
-}
-
-export interface MidsceneYamlFlowItemAIInput extends LocateOption {
-  // previous version
-  // aiInput: string; // value to input
-  // locate: TUserPrompt; // where to input
-  aiInput: TUserPrompt | undefined; // where to input
-  value: string; // value to input
-}
-
-export interface MidsceneYamlFlowItemAIKeyboardPress extends LocateOption {
-  // previous version
-  // aiKeyboardPress: string;
-  // locate?: TUserPrompt; // where to press, optional
-  aiKeyboardPress: TUserPrompt | undefined; // where to press
-  keyName: string; // key to press
-}
-
-export interface MidsceneYamlFlowItemAIScroll
-  extends LocateOption,
-    ScrollParam {
-  // previous version
-  // aiScroll: null;
-  // locate?: TUserPrompt; // which area to scroll, optional
-  aiScroll: TUserPrompt | undefined; // which area to scroll
-}
-
 export interface MidsceneYamlFlowItemEvaluateJavaScript {
   javascript: string;
   name?: string;
@@ -219,13 +174,6 @@ export type MidsceneYamlFlowItem =
   | MidsceneYamlFlowItemAIAssert
   | MidsceneYamlFlowItemAIQuery
   | MidsceneYamlFlowItemAIWaitFor
-  | MidsceneYamlFlowItemAITap
-  | MidsceneYamlFlowItemAIRightClick
-  | MidsceneYamlFlowItemAIDoubleClick
-  | MidsceneYamlFlowItemAIHover
-  | MidsceneYamlFlowItemAIInput
-  | MidsceneYamlFlowItemAIKeyboardPress
-  | MidsceneYamlFlowItemAIScroll
   | MidsceneYamlFlowItemSleep
   | MidsceneYamlFlowItemLogScreenshot;
 
@@ -251,7 +199,6 @@ export interface MidsceneYamlConfig {
   shareBrowserContext?: boolean;
   web?: MidsceneYamlScriptWebEnv;
   android?: MidsceneYamlScriptAndroidEnv;
-  ios?: MidsceneYamlScriptIOSEnv;
   files: string[];
   headed?: boolean;
   keepWindow?: boolean;

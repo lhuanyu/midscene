@@ -1,9 +1,9 @@
 import assert from 'node:assert';
 import type { DeviceAction } from '@/types';
 import { PromptTemplate } from '@langchain/core/prompts';
-import type { vlLocateMode } from '@midscene/shared/env';
+import type { TVlModeTypes } from '@midscene/shared/env';
 import type { ResponseFormatJSONSchema } from 'openai/resources/index';
-import { z } from 'zod';
+import type { ZodObject, z } from 'zod';
 import { ifMidsceneLocatorField } from '../common';
 import { bboxDescription } from './common';
 
@@ -30,13 +30,16 @@ export const descriptionForAction = (
 
   // Handle paramSchema if it exists
   if (action.paramSchema) {
-    assert(
-      action.paramSchema instanceof z.ZodObject,
-      'paramSchema must be a zod object',
-    );
     // Try to extract parameter information from the zod schema
     // For zod object schemas, extract type information and descriptions
-    const shape = action.paramSchema.shape;
+    const shape = (action.paramSchema as ZodObject<any>).shape;
+
+    if (!shape) {
+      console.warn(
+        `action.paramSchema is not a ZodObject, may lead to unexpected behavior, action name: ${action.name}`,
+      );
+    }
+
     const paramLines: string[] = [];
 
     // Helper function to get type name from zod schema
@@ -173,7 +176,7 @@ const systemTemplateOfVLPlanning = ({
   vlMode,
 }: {
   actionSpace: DeviceAction<any>[];
-  vlMode: ReturnType<typeof vlLocateMode>;
+  vlMode: TVlModeTypes | undefined;
 }) => {
   const actionNameList = actionSpace.map((action) => action.name).join(', ');
   const actionDescriptionList = actionSpace.map((action) => {
@@ -364,7 +367,7 @@ export async function systemPromptToTaskPlanning({
   vlMode,
 }: {
   actionSpace: DeviceAction<any>[];
-  vlMode: ReturnType<typeof vlLocateMode>;
+  vlMode: TVlModeTypes | undefined;
 }) {
   if (vlMode) {
     return systemTemplateOfVLPlanning({ actionSpace, vlMode });
@@ -486,9 +489,7 @@ Here is the user's instruction:
 `;
 };
 
-export const automationUserPrompt = (
-  vlMode: ReturnType<typeof vlLocateMode>,
-) => {
+export const automationUserPrompt = (vlMode: TVlModeTypes | undefined) => {
   if (vlMode) {
     return new PromptTemplate({
       template: '{taskBackgroundContext}',

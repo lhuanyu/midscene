@@ -31,15 +31,12 @@ export type {
   MidsceneYamlScript,
   MidsceneYamlTask,
   MidsceneYamlFlowItem,
-  MidsceneYamlFlowItemAIRightClick,
-  MidsceneYamlFlowItemAIDoubleClick,
   MidsceneYamlConfigResult,
   MidsceneYamlScriptWebEnv,
   MidsceneYamlScriptAndroidEnv,
-  MidsceneYamlScriptIOSEnv,
   MidsceneYamlConfig,
   LocateOption,
   DetailedLocateParam,
 } from './yaml';
 
-export { Agent, type AgentOpt } from './agent';
+export { Agent, type AgentOpt, createAgent } from './agent';

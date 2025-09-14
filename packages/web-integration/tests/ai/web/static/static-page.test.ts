@@ -35,7 +35,16 @@ describe(
     });
 
     it('server should work', async () => {
-      server = new PlaygroundServer(StaticPage, StaticPageAgent);
+      const page = new StaticPage({
+        tree: {
+          node: null,
+          children: [],
+        },
+        size: { width: 800, height: 600 },
+        screenshotBase64: '',
+      });
+      const agent = new StaticPageAgent(page);
+      server = new PlaygroundServer(page, agent);
 
       await server.launch();
 

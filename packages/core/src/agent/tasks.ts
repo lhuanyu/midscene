@@ -43,7 +43,7 @@ import {
 import { sleep } from '@/utils';
 import { NodeType } from '@midscene/shared/constants';
 import {
-  type IModelPreferences,
+  type IModelConfig,
   MIDSCENE_REPLANNING_CYCLE_LIMIT,
   globalConfigManager,
 } from '@midscene/shared/env';
@@ -193,19 +193,9 @@ export class TaskExecutor {
         task.recorder = recorder;
         const shot = await this.recordScreenshot(`before ${task.type}`);
         recorder.push(shot);
+
         const result = await taskApply.executor(param, context, ...args);
-        if (taskApply.type === 'Action') {
-          await Promise.all([
-            (async () => {
-              await sleep(100);
-              if (this.interface.beforeAction) {
-                debug('will call "beforeAction" for interface');
-                await this.interface.beforeAction();
-              }
-            })(),
-            sleep(200),
-          ]);
-        }
+
         if (appendAfterExecution) {
           const shot2 = await this.recordScreenshot('after Action');
           recorder.push(shot2);
@@ -216,7 +206,10 @@ export class TaskExecutor {
     return taskWithScreenshot;
   }
 
-  public async convertPlanToExecutable(plans: PlanningAction[]) {
+  public async convertPlanToExecutable(
+    plans: PlanningAction[],
+    modelConfig: IModelConfig,
+  ) {
     const tasks: ExecutionTaskApply[] = [];
 
     const taskForLocatePlan = (
@@ -302,10 +295,14 @@ export class TaskExecutor {
           const elementFromAiLocate =
             !userExpectedPathHitFlag && !cacheHitFlag && !planHitFlag
               ? (
-                  await this.insight.locate(param, {
-                    // fallback to ai locate
-                    context: uiContext,
-                  })
+                  await this.insight.locate(
+                    param,
+                    {
+                      // fallback to ai locate
+                      context: uiContext,
+                    },
+                    modelConfig,
+                  )
                 ).element
               : undefined;
           const aiLocateHitFlag = !!elementFromAiLocate;
@@ -525,8 +522,45 @@ export class TaskExecutor {
               );
             });
 
+            try {
+              await Promise.all([
+                (async () => {
+                  if (this.interface.beforeInvokeAction) {
+                    debug('will call "beforeInvokeAction" for interface');
+                    await this.interface.beforeInvokeAction(action.name, param);
+                    debug('called "beforeInvokeAction" for interface');
+                  }
+                })(),
+                sleep(200),
+              ]);
+            } catch (originalError: any) {
+              const originalMessage =
+                originalError?.message || String(originalError);
+              throw new Error(
+                `error in running beforeInvokeAction for ${action.name}: ${originalMessage}`,
+                { cause: originalError },
+              );
+            }
+
+            debug('calling action', action.name);
             const actionFn = action.call.bind(this.interface);
             await actionFn(param, context);
+            debug('called action', action.name);
+
+            try {
+              if (this.interface.afterInvokeAction) {
+                debug('will call "afterInvokeAction" for interface');
+                await this.interface.afterInvokeAction(action.name, param);
+                debug('called "afterInvokeAction" for interface');
+              }
+            } catch (originalError: any) {
+              const originalMessage =
+                originalError?.message || String(originalError);
+              throw new Error(
+                `error in running afterInvokeAction for ${action.name}: ${originalMessage}`,
+                { cause: originalError },
+              );
+            }
             // Return a proper result for report generation
             return {
               output: {
@@ -620,9 +654,13 @@ export class TaskExecutor {
 
   private planningTaskFromPrompt(
     userInstruction: string,
-    log?: string,
-    actionContext?: string,
+    opts: {
+      log?: string;
+      actionContext?: string;
+      modelConfig: IModelConfig;
+    },
   ) {
+    const { log, actionContext, modelConfig } = opts;
     const task: ExecutionTaskPlanningApply = {
       type: 'Planning',
       subType: 'Plan',
@@ -657,6 +695,7 @@ export class TaskExecutor {
           actionContext,
           interfaceType: this.interface.interfaceType as InterfaceType,
           actionSpace,
+          modelConfig,
         });
 
         const {
@@ -748,7 +787,9 @@ export class TaskExecutor {
 
   private planningTaskToGoal(
     userInstruction: string,
-    modelPreferences: IModelPreferences,
+    opts: {
+      modelConfig: IModelConfig;
+    },
   ) {
     const task: ExecutionTaskPlanningApply = {
       type: 'Planning',
@@ -759,11 +800,13 @@ export class TaskExecutor {
       },
       executor: async (param, executorContext) => {
         const { uiContext } = await this.setupPlanningContext(executorContext);
+        const { modelConfig } = opts;
+        const { uiTarsModelVersion } = modelConfig;
 
         const imagePayload = await resizeImageForUiTars(
           uiContext.screenshotBase64,
           uiContext.size,
-          modelPreferences,
+          uiTarsModelVersion,
         );
 
         this.appendConversationHistory({
@@ -787,7 +830,7 @@ export class TaskExecutor {
           userInstruction: param.userInstruction,
           conversationHistory: this.conversationHistory,
           size: uiContext.size,
-          modelPreferences,
+          modelConfig,
         });
 
         const { actions, action_summary, usage } = planResult;
@@ -822,11 +865,12 @@ export class TaskExecutor {
   async runPlans(
     title: string,
     plans: PlanningAction[],
+    modelConfig: IModelConfig,
   ): Promise<ExecutionResult> {
     const taskExecutor = new Executor(title, {
       onTaskStart: this.onTaskStartCallback,
     });
-    const { tasks } = await this.convertPlanToExecutable(plans);
+    const { tasks } = await this.convertPlanToExecutable(plans, modelConfig);
     await taskExecutor.append(tasks);
     const result = await taskExecutor.flush();
     const { output } = result!;
@@ -838,6 +882,7 @@ export class TaskExecutor {
 
   async action(
     userPrompt: string,
+    modelConfig: IModelConfig,
     actionContext?: string,
   ): Promise<
     ExecutionResult<
@@ -852,7 +897,11 @@ export class TaskExecutor {
     });
 
     let planningTask: ExecutionTaskPlanningApply | null =
-      this.planningTaskFromPrompt(userPrompt, undefined, actionContext);
+      this.planningTaskFromPrompt(userPrompt, {
+        log: undefined,
+        actionContext,
+        modelConfig,
+      });
     let replanCount = 0;
     const logList: string[] = [];
 
@@ -866,7 +915,7 @@ export class TaskExecutor {
         const errorMsg =
           'Replanning too many times, please split the task into multiple steps';
 
-        return this.appendErrorPlan(taskExecutor, errorMsg);
+        return this.appendErrorPlan(taskExecutor, errorMsg, modelConfig);
       }
 
       // plan
@@ -885,7 +934,7 @@ export class TaskExecutor {
 
       let executables: Awaited<ReturnType<typeof this.convertPlanToExecutable>>;
       try {
-        executables = await this.convertPlanToExecutable(plans);
+        executables = await this.convertPlanToExecutable(plans, modelConfig);
         taskExecutor.append(executables.tasks);
       } catch (error) {
         return this.appendErrorPlan(
@@ -893,6 +942,7 @@ export class TaskExecutor {
           `Error converting plans to executable tasks: ${error}, plans: ${JSON.stringify(
             plans,
           )}`,
+          modelConfig,
         );
       }
 
@@ -911,11 +961,11 @@ export class TaskExecutor {
         planningTask = null;
         break;
       }
-      planningTask = this.planningTaskFromPrompt(
-        userPrompt,
-        logList.length > 0 ? `- ${logList.join('\n- ')}` : undefined,
+      planningTask = this.planningTaskFromPrompt(userPrompt, {
+        log: logList.length > 0 ? `- ${logList.join('\n- ')}` : undefined,
         actionContext,
-      );
+        modelConfig,
+      });
       replanCount++;
     }
 
@@ -927,7 +977,10 @@ export class TaskExecutor {
     };
   }
 
-  async actionToGoal(userPrompt: string): Promise<
+  async actionToGoal(
+    userPrompt: string,
+    modelConfig: IModelConfig,
+  ): Promise<
     ExecutionResult<
       | {
           yamlFlow?: MidsceneYamlFlowItem[]; // for cache use
@@ -952,10 +1005,11 @@ export class TaskExecutor {
         'userPrompt:',
         userPrompt,
       );
+
       const planningTask: ExecutionTaskPlanningApply = this.planningTaskToGoal(
         userPrompt,
         {
-          intent: 'planning',
+          modelConfig,
         },
       );
       await taskExecutor.append(planningTask);
@@ -976,7 +1030,7 @@ export class TaskExecutor {
       yamlFlow.push(...(output.yamlFlow || []));
       let executables: Awaited<ReturnType<typeof this.convertPlanToExecutable>>;
       try {
-        executables = await this.convertPlanToExecutable(plans);
+        executables = await this.convertPlanToExecutable(plans, modelConfig);
         taskExecutor.append(executables.tasks);
       } catch (error) {
         return this.appendErrorPlan(
@@ -984,6 +1038,7 @@ export class TaskExecutor {
           `Error converting plans to executable tasks: ${error}, plans: ${JSON.stringify(
             plans,
           )}`,
+          modelConfig,
         );
       }
 
@@ -1011,6 +1066,7 @@ export class TaskExecutor {
   private createTypeQueryTask(
     type: 'Query' | 'Boolean' | 'Number' | 'String' | 'Assert',
     demand: InsightExtractParam,
+    modelConfig: IModelConfig,
     opt?: InsightExtractOption,
     multimodalPrompt?: TMultimodalPrompt,
   ) {
@@ -1059,6 +1115,7 @@ export class TaskExecutor {
 
         const { data, usage, thought } = await this.insight.extract<any>(
           demandInput,
+          modelConfig,
           opt,
           multimodalPrompt,
         );
@@ -1088,6 +1145,7 @@ export class TaskExecutor {
   async createTypeQueryExecution<T>(
     type: 'Query' | 'Boolean' | 'Number' | 'String' | 'Assert',
     demand: InsightExtractParam,
+    modelConfig: IModelConfig,
     opt?: InsightExtractOption,
     multimodalPrompt?: TMultimodalPrompt,
   ): Promise<ExecutionResult<T>> {
@@ -1104,6 +1162,7 @@ export class TaskExecutor {
     const queryTask = await this.createTypeQueryTask(
       type,
       demand,
+      modelConfig,
       opt,
       multimodalPrompt,
     );
@@ -1128,12 +1187,14 @@ export class TaskExecutor {
 
   async assert(
     assertion: TUserPrompt,
+    modelConfig: IModelConfig,
     opt?: InsightExtractOption,
   ): Promise<ExecutionResult<boolean>> {
     const { textPrompt, multimodalPrompt } = parsePrompt(assertion);
     return await this.createTypeQueryExecution<boolean>(
       'Assert',
       textPrompt,
+      modelConfig,
       opt,
       multimodalPrompt,
     );
@@ -1172,7 +1233,11 @@ export class TaskExecutor {
     this.conversationHistory.push(conversationHistory);
   }
 
-  private async appendErrorPlan(taskExecutor: Executor, errorMsg: string) {
+  private async appendErrorPlan(
+    taskExecutor: Executor,
+    errorMsg: string,
+    modelConfig: IModelConfig,
+  ) {
     const errorPlan: PlanningAction<PlanningActionParamError> = {
       type: 'Error',
       param: {
@@ -1180,7 +1245,10 @@ export class TaskExecutor {
       },
       locate: null,
     };
-    const { tasks } = await this.convertPlanToExecutable([errorPlan]);
+    const { tasks } = await this.convertPlanToExecutable(
+      [errorPlan],
+      modelConfig,
+    );
     await taskExecutor.append(this.prependExecutorWithScreenshot(tasks[0]));
     await taskExecutor.flush();
 
@@ -1193,6 +1261,7 @@ export class TaskExecutor {
   async waitFor(
     assertion: TUserPrompt,
     opt: PlanningActionParamWaitFor,
+    modelConfig: IModelConfig,
   ): Promise<ExecutionResult<void>> {
     const { textPrompt, multimodalPrompt } = parsePrompt(assertion);
 
@@ -1219,6 +1288,7 @@ export class TaskExecutor {
       const queryTask = await this.createTypeQueryTask(
         'Assert',
         textPrompt,
+        modelConfig,
         {
           isWaitForAssert: true,
           returnThought: true,
@@ -1259,9 +1329,10 @@ export class TaskExecutor {
           },
           locate: null,
         };
-        const { tasks: sleepTasks } = await this.convertPlanToExecutable([
-          sleepPlan,
-        ]);
+        const { tasks: sleepTasks } = await this.convertPlanToExecutable(
+          [sleepPlan],
+          modelConfig,
+        );
         await taskExecutor.append(
           this.prependExecutorWithScreenshot(sleepTasks[0]),
         );
@@ -1272,6 +1343,7 @@ export class TaskExecutor {
     return this.appendErrorPlan(
       taskExecutor,
       `waitFor timeout: ${errorThought}`,
+      modelConfig,
     );
   }
 }

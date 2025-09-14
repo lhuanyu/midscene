@@ -1,62 +1,135 @@
-import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import type { Server } from 'node:http';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Agent as PageAgent } from '@midscene/core/agent';
 import type { AbstractInterface } from '@midscene/core/device';
 import { getTmpDir } from '@midscene/core/utils';
 import { PLAYGROUND_SERVER_PORT } from '@midscene/shared/constants';
 import { overrideAIConfig } from '@midscene/shared/env';
-import { ifInBrowser, ifInWorker } from '@midscene/shared/utils';
-import cors from 'cors';
-import dotenv from 'dotenv';
 import express, { type Request, type Response } from 'express';
+import { v4 as generateUUID } from 'uuid';
 import { executeAction, formatErrorMessage } from './common';
 import type { PlaygroundAgent } from './types';
 
+import 'dotenv/config';
+
 const defaultPort = PLAYGROUND_SERVER_PORT;
 
-const errorHandler = (err: any, req: any, res: any, next: any) => {
+// Static path for playground files
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const STATIC_PATH = join(__dirname, '..', '..', 'static');
+
+const errorHandler = (
+  err: unknown,
+  req: Request,
+  res: Response,
+  next: express.NextFunction,
+) => {
   console.error(err);
+  const errorMessage =
+    err instanceof Error ? err.message : 'Internal server error';
   res.status(500).json({
-    error: err.message,
+    error: errorMessage,
   });
 };
 
-const setup = async () => {
-  if (!ifInBrowser && !ifInWorker) {
-    dotenv.config();
-  }
-};
-
-export default class PlaygroundServer {
-  app: express.Application;
+class PlaygroundServer {
+  private _app: express.Application;
   tmpDir: string;
   server?: Server;
   port?: number | null;
-  pageClass: new (
-    ...args: any[]
-  ) => AbstractInterface;
-  agentClass: new (
-    ...args: any[]
-  ) => PageAgent;
-  staticPath?: string;
+  page: AbstractInterface;
+  agent: PageAgent;
+  staticPath: string;
   taskProgressTips: Record<string, string>;
-  activeAgents: Record<string, PageAgent>;
+  id: string; // Unique identifier for this server instance
+
+  private _initialized = false;
 
   constructor(
-    pageClass: new (...args: any[]) => AbstractInterface,
-    agentClass: new (...args: any[]) => PageAgent,
-    staticPath?: string,
+    page: AbstractInterface,
+    agent: PageAgent,
+    staticPath = STATIC_PATH,
+    id?: string, // Optional override ID
   ) {
-    this.app = express();
+    this._app = express();
     this.tmpDir = getTmpDir()!;
-    this.pageClass = pageClass;
-    this.agentClass = agentClass;
+    this.page = page;
+    this.agent = agent;
     this.staticPath = staticPath;
     this.taskProgressTips = {};
-    this.activeAgents = {};
-    setup();
+    // Use provided ID, or generate random UUID for each startup
+    this.id = id || generateUUID();
+  }
+
+  /**
+   * Get the Express app instance for custom configuration
+   *
+   * IMPORTANT: Add middleware (like CORS) BEFORE calling launch()
+   * The routes are initialized when launch() is called, so middleware
+   * added after launch() will not affect the API routes.
+   *
+   * @example
+   * ```typescript
+   * import cors from 'cors';
+   *
+   * const server = new PlaygroundServer(page, agent);
+   *
+   * // Add CORS middleware before launch
+   * server.app.use(cors({
+   *   origin: true,
+   *   credentials: true,
+   *   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+   * }));
+   *
+   * await server.launch();
+   * ```
+   */
+  get app(): express.Application {
+    return this._app;
+  }
+
+  /**
+   * Initialize Express app with all routes and middleware
+   * Called automatically by launch() if not already initialized
+   */
+  private initializeApp(): void {
+    if (this._initialized) return;
+
+    // Built-in middleware to parse JSON bodies
+    this._app.use(express.json({ limit: '50mb' }));
+
+    // Context update middleware (after JSON parsing)
+    this._app.use(
+      (req: Request, _res: Response, next: express.NextFunction) => {
+        const { context } = req.body || {};
+        if (
+          context &&
+          'updateContext' in this.page &&
+          typeof this.page.updateContext === 'function'
+        ) {
+          this.page.updateContext(context);
+          console.log('Context updated by PlaygroundServer middleware');
+        }
+        next();
+      },
+    );
+
+    // NOTE: CORS middleware should be added externally via server.app.use()
+    // before calling server.launch() if needed
+
+    // API routes
+    this.setupRoutes();
+
+    // Static file serving (if staticPath is provided)
+    this.setupStaticRoutes();
+
+    // Error handler middleware (must be last)
+    this._app.use(errorHandler);
+
+    this._initialized = true;
   }
 
   filePathForUuid(uuid: string) {
@@ -70,25 +143,18 @@ export default class PlaygroundServer {
     return tmpFile;
   }
 
-  async launch(port?: number) {
-    this.port = port || defaultPort;
-    this.app.use(errorHandler);
-
-    this.app.use(
-      cors({
-        origin: '*',
-        credentials: true,
-      }),
-    );
-
-    this.app.get('/status', async (req: Request, res: Response) => {
-      // const modelName = g
+  /**
+   * Setup all API routes
+   */
+  private setupRoutes(): void {
+    this._app.get('/status', async (req: Request, res: Response) => {
       res.send({
         status: 'ok',
+        id: this.id,
       });
     });
 
-    this.app.get('/context/:uuid', async (req: Request, res: Response) => {
+    this._app.get('/context/:uuid', async (req: Request, res: Response) => {
       const { uuid } = req.params;
       const contextFile = this.filePathForUuid(uuid);
 
@@ -104,7 +170,7 @@ export default class PlaygroundServer {
       });
     });
 
-    this.app.get(
+    this._app.get(
       '/task-progress/:requestId',
       async (req: Request, res: Response) => {
         const { requestId } = req.params;
@@ -114,71 +180,73 @@ export default class PlaygroundServer {
       },
     );
 
-    this.app.post(
-      '/action-space',
-      express.json({ limit: '30mb' }),
-      async (req: Request, res: Response) => {
-        const { context } = req.body;
+    this._app.post('/action-space', async (req: Request, res: Response) => {
+      try {
+        let actionSpace = [];
 
-        if (!context) {
-          return res.status(400).json({
-            error: 'context is required',
-          });
-        }
+        actionSpace = await this.page.actionSpace();
 
-        try {
-          // Create agent with context like in /execute
-          const page = new this.pageClass(context);
-          const actionSpace = await page.actionSpace();
-
-          // Process actionSpace to make paramSchema serializable
-          const processedActionSpace = actionSpace.map((action: any) => {
-            if (action.paramSchema && typeof action.paramSchema === 'object') {
+        // Process actionSpace to make paramSchema serializable with shape info
+        const processedActionSpace = actionSpace.map((action: unknown) => {
+          if (action && typeof action === 'object' && 'paramSchema' in action) {
+            const typedAction = action as {
+              paramSchema?: { shape?: object; [key: string]: unknown };
+              [key: string]: unknown;
+            };
+            if (
+              typedAction.paramSchema &&
+              typeof typedAction.paramSchema === 'object'
+            ) {
               // Extract shape information from Zod schema
               let processedSchema = null;
 
               try {
                 // Extract shape from runtime Zod object
                 if (
-                  action.paramSchema.shape &&
-                  typeof action.paramSchema.shape === 'object'
+                  typedAction.paramSchema.shape &&
+                  typeof typedAction.paramSchema.shape === 'object'
                 ) {
                   processedSchema = {
                     type: 'ZodObject',
-                    shape: action.paramSchema.shape,
+                    shape: typedAction.paramSchema.shape,
                   };
                 }
               } catch (e) {
+                const actionName =
+                  'name' in typedAction && typeof typedAction.name === 'string'
+                    ? typedAction.name
+                    : 'unknown';
                 console.warn(
                   'Failed to process paramSchema for action:',
-                  action.name,
+                  actionName,
                   e,
                 );
               }
 
               return {
-                ...action,
+                ...typedAction,
                 paramSchema: processedSchema,
               };
             }
-            return action;
-          });
+          }
+          return action;
+        });
 
-          res.json(processedActionSpace);
-        } catch (error: any) {
-          console.error('Failed to get action space:', error);
-          res.status(500).json({
-            error: error.message,
-          });
-        }
-      },
-    );
+        res.json(processedActionSpace);
+      } catch (error: unknown) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
+        console.error('Failed to get action space:', error);
+        res.status(500).json({
+          error: errorMessage,
+        });
+      }
+    });
 
     // -------------------------
     // actions from report file
-    this.app.post(
+    this._app.post(
       '/playground-with-context',
-      express.json({ limit: '50mb' }),
       async (req: Request, res: Response) => {
         const context = req.body.context;
 
@@ -188,7 +256,7 @@ export default class PlaygroundServer {
           });
         }
 
-        const uuid = randomUUID();
+        const uuid = generateUUID();
         this.saveContextFile(uuid, context);
         return res.json({
           location: `/playground/${uuid}`,
@@ -197,204 +265,305 @@ export default class PlaygroundServer {
       },
     );
 
-    this.app.post(
-      '/execute',
-      express.json({ limit: '30mb' }),
-      async (req: Request, res: Response) => {
-        const {
-          context,
+    this._app.post('/execute', async (req: Request, res: Response) => {
+      const {
+        type,
+        prompt,
+        params,
+        requestId,
+        deepThink,
+        screenshotIncluded,
+        domIncluded,
+      } = req.body;
+
+      if (!type) {
+        return res.status(400).json({
+          error: 'type is required',
+        });
+      }
+
+      if (requestId) {
+        this.taskProgressTips[requestId] = '';
+
+        this.agent.onTaskStartTip = (tip: string) => {
+          this.taskProgressTips[requestId] = tip;
+        };
+      }
+
+      const response: {
+        result: unknown;
+        dump: string | null;
+        error: string | null;
+        reportHTML: string | null;
+        requestId?: string;
+      } = {
+        result: null,
+        dump: null,
+        error: null,
+        reportHTML: null,
+        requestId,
+      };
+
+      const startTime = Date.now();
+      try {
+        // Get action space to check for dynamic actions
+        const actionSpace = await this.page.actionSpace();
+
+        // Prepare value object for executeAction
+        const value = {
           type,
           prompt,
           params,
-          requestId,
-          deepThink,
-          screenshotIncluded,
-          domIncluded,
-        } = req.body;
-
-        if (!context) {
-          return res.status(400).json({
-            error: 'context is required',
-          });
-        }
-
-        if (!type) {
-          return res.status(400).json({
-            error: 'type is required',
-          });
-        }
-
-        // build an agent with context
-        const page = new this.pageClass(context);
-        const agent = new this.agentClass(page);
-
-        if (requestId) {
-          this.taskProgressTips[requestId] = '';
-          this.activeAgents[requestId] = agent;
-
-          agent.onTaskStartTip = (tip: string) => {
-            this.taskProgressTips[requestId] = tip;
-          };
-        }
-
-        const response: {
-          result: any;
-          dump: string | null;
-          error: string | null;
-          reportHTML: string | null;
-          requestId?: string;
-        } = {
-          result: null,
-          dump: null,
-          error: null,
-          reportHTML: null,
-          requestId,
         };
 
-        const startTime = Date.now();
-        try {
-          // Get action space to check for dynamic actions
-          const actionSpace = await page.actionSpace();
+        response.result = await executeAction(
+          this.agent,
+          type,
+          actionSpace,
+          value,
+          {
+            deepThink: deepThink || false,
+            screenshotIncluded,
+            domIncluded,
+          },
+        );
+      } catch (error: unknown) {
+        response.error = formatErrorMessage(error);
+      }
 
-          // Prepare value object for executeAction
-          const value = {
-            type,
-            prompt,
-            params,
-          };
+      try {
+        response.dump = JSON.parse(this.agent.dumpDataString());
+        response.reportHTML = this.agent.reportHTMLString() || null;
 
-          response.result = await executeAction(
-            agent as unknown as PlaygroundAgent,
-            type,
-            actionSpace,
-            value,
-            {
-              deepThink: deepThink || false,
-              screenshotIncluded,
-              domIncluded,
-            },
-          );
-        } catch (error: any) {
-          response.error = formatErrorMessage(error);
+        this.agent.writeOutActionDumps();
+        this.agent.resetDump();
+      } catch (error: unknown) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
+        console.error(
+          `write out dump failed: requestId: ${requestId}, ${errorMessage}`,
+        );
+      }
+
+      res.send(response);
+      const timeCost = Date.now() - startTime;
+
+      if (response.error) {
+        console.error(
+          `handle request failed after ${timeCost}ms: requestId: ${requestId}, ${response.error}`,
+        );
+      } else {
+        console.log(
+          `handle request done after ${timeCost}ms: requestId: ${requestId}`,
+        );
+      }
+
+      // Clean up task progress tip after execution completes
+      if (requestId) {
+        delete this.taskProgressTips[requestId];
+      }
+    });
+
+    this._app.post(
+      '/cancel/:requestId',
+      async (req: Request, res: Response) => {
+        const { requestId } = req.params;
+
+        if (!requestId) {
+          return res.status(400).json({
+            error: 'requestId is required',
+          });
         }
 
         try {
-          response.dump = JSON.parse(agent.dumpDataString());
-          response.reportHTML = agent.reportHTMLString() || null;
-
-          agent.writeOutActionDumps();
-          agent.destroy();
-        } catch (error: any) {
-          console.error(
-            `write out dump failed: requestId: ${requestId}, ${error.message}`,
-          );
-        }
-
-        res.send(response);
-        const timeCost = Date.now() - startTime;
-
-        if (response.error) {
-          console.error(
-            `handle request failed after ${timeCost}ms: requestId: ${requestId}, ${response.error}`,
-          );
-        } else {
-          console.log(
-            `handle request done after ${timeCost}ms: requestId: ${requestId}`,
-          );
-        }
-
-        // Clean up the agent from activeAgents after execution completes
-        if (requestId && this.activeAgents[requestId]) {
-          delete this.activeAgents[requestId];
+          // Since we only have one agent, just clear the task progress tip
+          if (this.taskProgressTips[requestId]) {
+            delete this.taskProgressTips[requestId];
+          }
+          res.json({ status: 'cancelled' });
+        } catch (error: unknown) {
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown error';
+          console.error(`Failed to cancel: ${errorMessage}`);
+          res.status(500).json({
+            error: `Failed to cancel: ${errorMessage}`,
+          });
         }
       },
     );
 
-    this.app.get('/cancel/:requestId', async (req: Request, res: Response) => {
-      const { requestId } = req.params;
-
-      if (!requestId) {
-        return res.status(400).json({
-          error: 'requestId is required',
-        });
-      }
-
-      const agent = this.activeAgents[requestId];
-      if (!agent) {
-        return res.status(404).json({
-          error: 'No active agent found for this requestId',
-        });
-      }
-
+    // Screenshot API for real-time screenshot polling
+    this._app.get('/screenshot', async (_req: Request, res: Response) => {
       try {
-        await agent.destroy();
-        delete this.activeAgents[requestId];
-        res.json({ status: 'cancelled' });
-      } catch (error: any) {
-        console.error(`Failed to cancel agent: ${error.message}`);
+        // Check if page has screenshotBase64 method
+        if (typeof this.page.screenshotBase64 !== 'function') {
+          return res.status(500).json({
+            error: 'Screenshot method not available on current interface',
+          });
+        }
+
+        const base64Screenshot = await this.page.screenshotBase64();
+
+        res.json({
+          screenshot: base64Screenshot,
+          timestamp: Date.now(),
+        });
+      } catch (error: unknown) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
+        console.error(`Failed to take screenshot: ${errorMessage}`);
         res.status(500).json({
-          error: `Failed to cancel: ${error.message}`,
+          error: `Failed to take screenshot: ${errorMessage}`,
         });
       }
     });
 
-    this.app.post(
-      '/config',
-      express.json({ limit: '1mb' }),
-      async (req: Request, res: Response) => {
-        const { aiConfig } = req.body;
+    // Interface info API for getting interface type and description
+    this._app.get('/interface-info', async (_req: Request, res: Response) => {
+      try {
+        const type = this.page.interfaceType || 'Unknown';
+        const description = this.page.describe?.() || undefined;
 
-        if (!aiConfig || typeof aiConfig !== 'object') {
-          return res.status(400).json({
-            error: 'aiConfig is required and must be an object',
-          });
-        }
+        res.json({
+          type,
+          description,
+        });
+      } catch (error: unknown) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
+        console.error(`Failed to get interface info: ${errorMessage}`);
+        res.status(500).json({
+          error: `Failed to get interface info: ${errorMessage}`,
+        });
+      }
+    });
 
-        try {
-          overrideAIConfig(aiConfig);
+    this.app.post('/config', async (req: Request, res: Response) => {
+      const { aiConfig } = req.body;
 
-          return res.json({
-            status: 'ok',
-            message: 'AI config updated successfully',
-          });
-        } catch (error: any) {
-          console.error(`Failed to update AI config: ${error.message}`);
-          return res.status(500).json({
-            error: `Failed to update AI config: ${error.message}`,
-          });
-        }
-      },
-    );
+      if (!aiConfig || typeof aiConfig !== 'object') {
+        return res.status(400).json({
+          error: 'aiConfig is required and must be an object',
+        });
+      }
 
-    // Set up static file serving after all API routes are defined
-    if (this.staticPath) {
-      this.app.get('/', (_req: Request, res: Response) => {
-        // compatible with windows
-        res.redirect('/index.html');
-      });
+      try {
+        overrideAIConfig(aiConfig, true);
 
-      this.app.get('*', (req: Request, res: Response) => {
-        const requestedPath = join(this.staticPath!, req.path);
-        if (existsSync(requestedPath)) {
-          res.sendFile(requestedPath);
-        } else {
-          res.sendFile(join(this.staticPath!, 'index.html'));
-        }
-      });
+        return res.json({
+          status: 'ok',
+          message: 'AI config updated successfully',
+        });
+      } catch (error: unknown) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Unknown error';
+        console.error(`Failed to update AI config: ${errorMessage}`);
+        return res.status(500).json({
+          error: `Failed to update AI config: ${errorMessage}`,
+        });
+      }
+    });
+  }
+
+  /**
+   * Setup static file serving routes
+   */
+  private setupStaticRoutes(): void {
+    // Handle index.html with port injection
+    this._app.get('/', (_req: Request, res: Response) => {
+      this.serveHtmlWithPorts(res);
+    });
+
+    this._app.get('/index.html', (_req: Request, res: Response) => {
+      this.serveHtmlWithPorts(res);
+    });
+
+    // Use express.static middleware for secure static file serving
+    this._app.use(express.static(this.staticPath));
+
+    // Fallback to index.html for SPA routing
+    this._app.get('*', (_req: Request, res: Response) => {
+      this.serveHtmlWithPorts(res);
+    });
+  }
+
+  /**
+   * Serve HTML with injected port configuration
+   */
+  private serveHtmlWithPorts(res: Response): void {
+    try {
+      const htmlPath = join(this.staticPath, 'index.html');
+      let html = readFileSync(htmlPath, 'utf8');
+
+      // Get scrcpy server port from global
+      const scrcpyPort = (global as any).scrcpyServerPort || this.port! + 1;
+
+      // Inject scrcpy port configuration script into HTML head
+      const configScript = `
+        <script>
+          window.SCRCPY_PORT = ${scrcpyPort};
+        </script>
+      `;
+
+      // Insert the script before closing </head> tag
+      html = html.replace('</head>', `${configScript}</head>`);
+
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+    } catch (error) {
+      console.error('Error serving HTML with ports:', error);
+      res.status(500).send('Internal Server Error');
     }
+  }
+
+  /**
+   * Launch the server on specified port
+   */
+  async launch(port?: number): Promise<PlaygroundServer> {
+    // Initialize routes now, after any middleware has been added
+    this.initializeApp();
+
+    this.port = port || defaultPort;
+
+    // Keep the random UUID as-is, no need to regenerate
 
     return new Promise((resolve) => {
-      const port = this.port;
-      this.server = this.app.listen(port, () => {
+      const serverPort = this.port;
+      this.server = this._app.listen(serverPort, () => {
         resolve(this);
       });
     });
   }
 
-  close() {
-    // close the server
-    if (this.server) {
-      return this.server.close();
-    }
+  /**
+   * Close the server and clean up resources
+   */
+  async close(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (this.server) {
+        // Clean up the single agent
+        try {
+          this.agent.destroy();
+        } catch (error) {
+          console.warn('Failed to destroy agent:', error);
+        }
+        this.taskProgressTips = {};
+
+        // Close the server
+        this.server.close((error) => {
+          if (error) {
+            reject(error);
+          } else {
+            this.server = undefined;
+            resolve();
+          }
+        });
+      } else {
+        resolve();
+      }
+    });
   }
 }
+
+export default PlaygroundServer;
+export { PlaygroundServer };

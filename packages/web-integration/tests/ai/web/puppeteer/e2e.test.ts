@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { PuppeteerAgent } from '@/puppeteer';
 import { sleep } from '@midscene/core/utils';
-import { vlLocateMode } from '@midscene/shared/env';
+import { globalModelConfigManager } from '@midscene/shared/env';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { launchPage } from './utils';
 
@@ -20,15 +20,37 @@ describe(
       }
     });
 
+    it('error in beforeInvokeAction', async () => {
+      const { originPage, reset } = await launchPage(
+        'https://www.saucedemo.com/',
+      );
+      resetFn = reset;
+      const agent = new PuppeteerAgent(originPage, {
+        beforeInvokeAction: () => {
+          throw new Error('this is an error in beforeInvokeAction');
+        },
+      });
+
+      await expect(async () => {
+        await agent.aiAction(
+          'type "standard_user" in user name input, type "secret_sauce" in password',
+        );
+      }).rejects.toThrowError();
+    });
+
     it('Sauce Demo by Swag Lab', async () => {
       const { originPage, reset } = await launchPage(
         'https://www.saucedemo.com/',
       );
       resetFn = reset;
       const onTaskStartTip = vi.fn();
+      const beforeInvokeAction = vi.fn();
+      const afterInvokeAction = vi.fn();
       const agent = new PuppeteerAgent(originPage, {
         cacheId: 'puppeteer(Sauce Demo by Swag Lab)',
         onTaskStartTip,
+        beforeInvokeAction,
+        afterInvokeAction,
       });
 
       await sleep(10 * 1000);
@@ -41,6 +63,20 @@ describe(
       );
 
       await agent.aiTap('Login');
+
+      expect(beforeInvokeAction.mock.calls.length).toBeGreaterThan(1);
+      expect(beforeInvokeAction.mock.calls.length).toEqual(
+        afterInvokeAction.mock.calls.length,
+      );
+      expect(
+        beforeInvokeAction.mock.calls.map((call) => call[0]),
+      ).toMatchInlineSnapshot(`
+        [
+          "Input",
+          "Input",
+          "Tap",
+        ]
+      `);
 
       expect(onTaskStartTip.mock.calls.length).toBeGreaterThan(1);
 
@@ -106,48 +142,45 @@ describe(
       expect(names.length).toBeGreaterThan(5);
     });
 
-    it.skipIf(!vlLocateMode({ intent: 'default' }))(
-      'search engine with specific actions',
-      async () => {
-        const { originPage, reset } = await launchPage(
-          'https://www.baidu.com/',
-        );
-        resetFn = reset;
-        const agent = new PuppeteerAgent(originPage);
+    const vlMode = globalModelConfigManager.getModelConfig('default').vlMode;
 
-        await agent.aiInput('AI 101', 'the search bar input');
-        await agent.aiTap('the search button');
+    it.skipIf(!vlMode)('search engine with specific actions', async () => {
+      const { originPage, reset } = await launchPage('https://www.baidu.com/');
+      resetFn = reset;
+      const agent = new PuppeteerAgent(originPage);
 
-        await sleep(3000);
+      await agent.aiInput('AI 101', 'the search bar input');
+      await agent.aiTap('the search button');
 
-        await agent.aiScroll({
-          direction: 'down',
-          scrollType: 'untilBottom',
+      await sleep(3000);
+
+      await agent.aiScroll({
+        direction: 'down',
+        scrollType: 'untilBottom',
+      });
+
+      await sleep(3000);
+
+      const settingsButton = await agent.aiBoolean(
+        'there is a settings button in the page',
+      );
+
+      if (settingsButton) {
+        await agent.aiTap('the settings button', {
+          deepThink: true,
         });
 
-        await sleep(3000);
+        await agent.aiTap('搜索设置', {
+          deepThink: true,
+        });
 
-        const settingsButton = await agent.aiBoolean(
-          'there is a settings button in the page',
-        );
+        await agent.aiTap('the close button of the popup', {
+          deepThink: true,
+        });
 
-        if (settingsButton) {
-          await agent.aiTap('the settings button', {
-            deepThink: true,
-          });
-
-          await agent.aiTap('搜索设置', {
-            deepThink: true,
-          });
-
-          await agent.aiTap('the close button of the popup', {
-            deepThink: true,
-          });
-
-          await agent.aiAssert('there is NOT a popup shown in the page');
-        }
-      },
-    );
+        await agent.aiAssert('there is NOT a popup shown in the page');
+      }
+    });
 
     it(
       'search engine',
@@ -278,6 +311,61 @@ describe(
       await agent.aiAction(
         'Type "AI 101" in search box, hit Enter, wait 2s. If there is a cookie prompt, close it',
       );
+    });
+
+    it('swipe', async () => {
+      const { originPage, reset } = await launchPage(
+        'https://m.baidu.com/s?word=%E5%A4%A7%E4%BC%97%E8%BD%A6%E5%9E%8Bid4',
+        {
+          viewport: {
+            width: 393,
+            height: 808,
+          },
+        },
+      );
+      resetFn = reset;
+      const agent = new PuppeteerAgent(originPage);
+      const screenshot1 = await agent.page.screenshotBase64();
+      await sleep(2000);
+      await agent.aiAction('Swipe right one screen');
+
+      await agent.aiAssert({
+        prompt: 'The content of the page is different from the reference',
+        images: [
+          {
+            name: 'reference screenshot',
+            url: screenshot1,
+          },
+        ],
+      });
+
+      const screenshot2 = await agent.page.screenshotBase64();
+      await agent.aiAction('Swipe left one screen');
+      await sleep(2000);
+      await agent.aiAssert({
+        prompt: 'The content of the page is different from the reference',
+        images: [
+          {
+            name: 'reference screenshot',
+            url: screenshot2,
+          },
+        ],
+      });
+    });
+
+    it('longPress', async () => {
+      const { originPage, reset } = await launchPage(
+        'https://m.baidu.com/from=0/ssid=0/s?word=%E5%A6%82%E6%9D%A5%E7%A5%9E%E6%B6%A8&sa=tb&ts=0&t_kt=0&ie=utf-8&rsv_t=62bcq4PxoQqNwE8k4KOIBgUFF1bZTuF4rSCYiho4tfMUcLopBczbgw&rsv_pq=11619249566711746686&ss=110&sugid=206020460001898&rfrom=1024439f&rchannel=1024439j&rqid=11619249566711746686',
+        {
+          viewport: {
+            width: 393,
+            height: 808,
+          },
+        },
+      );
+      resetFn = reset;
+      const agent = new PuppeteerAgent(originPage);
+      await agent.aiAction('长按进入新空间按钮');
     });
   },
   4 * 60 * 1000,

@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import * as fs from 'node:fs';
 import {
   type MidsceneLocationResultType,
+  adaptBboxToRect,
   adaptDoubaoBbox,
   adaptQwenBbox,
   dumpActionParam,
@@ -18,7 +19,6 @@ import {
 } from '@/ai-model/service-caller';
 import { type DeviceAction, getMidsceneLocationSchema } from '@/index';
 import { getMidsceneRunSubDir } from '@midscene/shared/common';
-import { type IModelPreferences, vlLocateMode } from '@midscene/shared/env';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 // @ts-ignore no types in es folder
@@ -38,8 +38,6 @@ function createTempHtmlFile(content: string): string {
   fs.writeFileSync(filePath, content, 'utf8');
   return filePath;
 }
-
-const defaultIntent: IModelPreferences = { intent: 'default' };
 
 describe('utils', () => {
   it('tmpDir', () => {
@@ -306,31 +304,31 @@ describe('extractJSONFromCodeBlock', () => {
 
   it('should handle JSON with point coordinates', () => {
     const input = '(123,456)';
-    const result = safeParseJson(input, defaultIntent);
+    const result = safeParseJson(input, undefined);
     expect(result).toEqual([123, 456]);
   });
 
   it('should parse valid JSON string using JSON.parse', () => {
     const input = '{"key": "value"}';
-    const result = safeParseJson(input, defaultIntent);
+    const result = safeParseJson(input, undefined);
     expect(result).toEqual({ key: 'value' });
   });
 
   it('should parse dirty JSON using dirty-json parser', () => {
     const input = "{key: 'value'}"; // Invalid JSON but valid dirty-json
-    const result = safeParseJson(input, defaultIntent);
+    const result = safeParseJson(input, undefined);
     expect(result).toEqual({ key: 'value' });
   });
 
   it('should throw error for unparseable content', () => {
     const input = 'not a json at all';
-    const result = safeParseJson(input, defaultIntent);
+    const result = safeParseJson(input, undefined);
     expect(result).toEqual(input);
   });
 
   it('should parse JSON from code block', () => {
     const input = '```json\n{"key": "value"}\n```';
-    const result = safeParseJson(input, defaultIntent);
+    const result = safeParseJson(input, undefined);
     expect(result).toEqual({ key: 'value' });
   });
 
@@ -344,7 +342,7 @@ describe('extractJSONFromCodeBlock', () => {
         "nested": "value"
       }
     }`;
-    const result = safeParseJson(input, defaultIntent);
+    const result = safeParseJson(input, undefined);
     expect(result).toEqual({
       string: 'value',
       number: 123,
@@ -370,6 +368,42 @@ describe('qwen-vl', () => {
 
   it('adaptQwenBbox with invalid bbox data', () => {
     expect(() => adaptQwenBbox([100])).toThrow();
+  });
+
+  it('adaptBboxToRect - size exceed image size', () => {
+    const result = adaptBboxToRect([100, 200, 1000, 2000], 1000, 1000);
+    expect(result).toMatchInlineSnapshot(`
+      {
+        "height": 800,
+        "left": 100,
+        "top": 200,
+        "width": 900,
+      }
+    `);
+  });
+
+  it('adaptBboxToRect - size exceed image size - 2', () => {
+    const result = adaptBboxToRect([158, 114, 526, 179], 684, 301, 611, 221);
+    expect(result).toMatchInlineSnapshot(`
+      {
+        "height": 65,
+        "left": 769,
+        "top": 335,
+        "width": 368,
+      }
+    `);
+  });
+
+  it('adaptBboxToRect - size exceed image size - 3', () => {
+    const result = adaptBboxToRect([25, 154, 153, 186], 301, 164, 0, 752);
+    expect(result).toMatchInlineSnapshot(`
+      {
+        "height": 10,
+        "left": 25,
+        "top": 906,
+        "width": 128,
+      }
+    `);
   });
 });
 
@@ -569,68 +603,214 @@ describe('search area', () => {
     `);
   });
 
-  it('expandSearchArea', () => {
-    const result = expandSearchArea(
-      { left: 100, top: 100, width: 100, height: 100 },
-      { width: 1000, height: 1000 },
-      defaultIntent,
-    );
+  describe('expandSearchArea', () => {
+    it('should expand normal position rect to minimum size', () => {
+      const result = expandSearchArea(
+        { left: 100, top: 100, width: 100, height: 100 },
+        { width: 1000, height: 1000 },
+        undefined,
+      );
 
-    // Dynamic expectation based on vlLocateMode
-    const isDoubaoVision = vlLocateMode(defaultIntent) === 'doubao-vision';
-    const expectedSize = isDoubaoVision ? 500 : 300;
-
-    expect(result).toEqual({
-      height: expectedSize,
-      left: 0,
-      top: 0,
-      width: expectedSize,
+      // For undefined vlMode, minEdgeSize = 300, padding = 100 each side
+      expect(result).toEqual({
+        left: 0, // 100 - 100 = 0
+        top: 0, // 100 - 100 = 0
+        width: 300, // guaranteed minimum
+        height: 300, // guaranteed minimum
+      });
     });
-  });
 
-  it('expandSearchArea with a big rect', () => {
-    const result = expandSearchArea(
-      { left: 100, top: 100, width: 500, height: 500 },
-      { width: 1000, height: 1000 },
-      defaultIntent,
-    );
-    expect(result).toMatchInlineSnapshot(`
-      {
-        "height": 820,
-        "left": 0,
-        "top": 0,
-        "width": 820,
-      }
-    `);
-  });
+    it('should expand normal position rect for doubao-vision', () => {
+      const result = expandSearchArea(
+        { left: 200, top: 200, width: 100, height: 100 },
+        { width: 1000, height: 1000 },
+        'doubao-vision',
+      );
 
-  it('expandSearchArea with a right-most rect', () => {
-    const result = expandSearchArea(
-      { left: 951, top: 800, width: 50, height: 50 },
-      { width: 1000, height: 1000 },
-      defaultIntent,
-    );
-
-    // Dynamic expectation based on vlLocateMode
-    const isDoubaoVision = vlLocateMode(defaultIntent) === 'doubao-vision';
-
-    if (isDoubaoVision) {
-      // minEdgeSize = 500, paddingSize = 225
+      // For doubao-vision, minEdgeSize = 500, padding = 200 each side
       expect(result).toEqual({
-        height: 425, // min(50 + 225*2, 1000 - 575) = min(500, 425) = 425
-        left: 726, // max(0, 951 - 225) = 726
-        top: 575, // max(0, 800 - 225) = 575
-        width: 274, // min(50 + 225*2, 1000 - 726) = min(500, 274) = 274
+        left: 0, // 200 - 200 = 0
+        top: 0, // 200 - 200 = 0
+        width: 500, // guaranteed minimum
+        height: 500, // guaranteed minimum
       });
-    } else {
-      // minEdgeSize = 300, paddingSize = 125
+    });
+
+    it('should handle already large rect with default padding', () => {
+      const result = expandSearchArea(
+        { left: 100, top: 100, width: 500, height: 500 },
+        { width: 1000, height: 1000 },
+        undefined,
+      );
+
+      // rect is already > 300, so use defaultPadding = 160
       expect(result).toEqual({
-        height: 300, // min(50 + 125*2, 1000 - 675) = min(300, 325) = 300
-        left: 826, // max(0, 951 - 125) = 826
-        top: 675, // max(0, 800 - 125) = 675
-        width: 174, // min(50 + 125*2, 1000 - 826) = min(300, 174) = 174
+        left: 0, // max(0, 100 - 160) = 0
+        top: 0, // max(0, 100 - 160) = 0
+        width: 820, // 500 + 160*2 = 820
+        height: 820, // 500 + 160*2 = 820
       });
-    }
+    });
+
+    it('should handle left-most position', () => {
+      const result = expandSearchArea(
+        { left: 10, top: 100, width: 50, height: 50 },
+        { width: 1000, height: 1000 },
+        undefined,
+      );
+
+      // minEdgeSize = 300, padding = 125 each side
+      expect(result).toEqual({
+        left: 0, // max(0, 10 - 125) = 0
+        top: 0, // max(0, 100 - 125) = 0
+        width: 300, // minimum size
+        height: 300, // minimum size
+      });
+    });
+
+    it('should handle top-most position', () => {
+      const result = expandSearchArea(
+        { left: 100, top: 10, width: 50, height: 50 },
+        { width: 1000, height: 1000 },
+        undefined,
+      );
+
+      expect(result).toEqual({
+        left: 0, // max(0, 100 - 125) = 0
+        top: 0, // max(0, 10 - 125) = 0
+        width: 300, // minimum size
+        height: 300, // minimum size
+      });
+    });
+
+    it('should handle right-most position', () => {
+      const result = expandSearchArea(
+        { left: 950, top: 100, width: 50, height: 50 },
+        { width: 1000, height: 1000 },
+        undefined,
+      );
+
+      // Original position would be: left: 950 - 125 = 825, width: 300
+      // But 825 + 300 = 1125 > 1000, so shift left to 700
+      expect(result).toEqual({
+        left: 700, // 1000 - 300 = 700
+        top: 0, // max(0, 100 - 125) = 0
+        width: 300, // minimum size maintained
+        height: 300, // minimum size
+      });
+    });
+
+    it('should handle bottom-most position', () => {
+      const result = expandSearchArea(
+        { left: 100, top: 950, width: 50, height: 50 },
+        { width: 1000, height: 1000 },
+        undefined,
+      );
+
+      // Original position would be: top: 950 - 125 = 825, height: 300
+      // But 825 + 300 = 1125 > 1000, so shift up to 700
+      expect(result).toEqual({
+        left: 0, // max(0, 100 - 125) = 0
+        top: 700, // 1000 - 300 = 700
+        width: 300, // minimum size
+        height: 300, // minimum size maintained
+      });
+    });
+
+    it('should handle corner position (bottom-right)', () => {
+      const result = expandSearchArea(
+        { left: 950, top: 950, width: 30, height: 30 },
+        { width: 1000, height: 1000 },
+        undefined,
+      );
+
+      expect(result).toEqual({
+        left: 700, // 1000 - 300 = 700
+        top: 700, // 1000 - 300 = 700
+        width: 300, // minimum size maintained
+        height: 300, // minimum size maintained
+      });
+    });
+
+    it('should handle very small screen - cannot fit minimum size', () => {
+      const result = expandSearchArea(
+        { left: 50, top: 50, width: 20, height: 20 },
+        { width: 200, height: 200 },
+        undefined,
+      );
+
+      // Screen is 200x200, but minEdgeSize is 300
+      // Should clamp to screen size
+      expect(result).toEqual({
+        left: 0,
+        top: 0,
+        width: 200, // clamped to screen width
+        height: 200, // clamped to screen height
+      });
+    });
+
+    it('should handle very small screen with doubao-vision', () => {
+      const result = expandSearchArea(
+        { left: 100, top: 100, width: 50, height: 50 },
+        { width: 400, height: 400 },
+        'doubao-vision',
+      );
+
+      // minEdgeSize = 500, but screen is only 400x400
+      expect(result).toEqual({
+        left: 0,
+        top: 0,
+        width: 400, // clamped to screen width
+        height: 400, // clamped to screen height
+      });
+    });
+
+    it('should handle rect larger than screen', () => {
+      const result = expandSearchArea(
+        { left: 0, top: 0, width: 150, height: 150 },
+        { width: 100, height: 100 },
+        undefined,
+      );
+
+      expect(result).toEqual({
+        left: 0,
+        top: 0,
+        width: 100, // clamped to screen width
+        height: 100, // clamped to screen height
+      });
+    });
+
+    it('should handle edge case with minimum screen size', () => {
+      const result = expandSearchArea(
+        { left: 5, top: 5, width: 10, height: 10 },
+        { width: 50, height: 50 },
+        undefined,
+      );
+
+      expect(result).toEqual({
+        left: 0,
+        top: 0,
+        width: 50, // entire screen width
+        height: 50, // entire screen height
+      });
+    });
+
+    it('should handle qwen-vl mode edge case', () => {
+      const result = expandSearchArea(
+        { left: 25, top: 891, width: 127, height: 23 },
+        { width: 1900, height: 916 },
+        'qwen-vl',
+      );
+
+      expect(result).toMatchInlineSnapshot(`
+        {
+          "height": 301,
+          "left": 0,
+          "top": 615,
+          "width": 301,
+        }
+      `);
+    });
   });
 });
 
