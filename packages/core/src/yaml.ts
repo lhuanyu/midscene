@@ -41,6 +41,7 @@ export interface MidsceneYamlScript {
 
   web?: MidsceneYamlScriptWebEnv;
   android?: MidsceneYamlScriptAndroidEnv;
+  ios?: MidsceneYamlScriptIOSEnv;
 
   interface?: MidsceneYamlScriptEnvGeneralInterface;
   config?: MidsceneYamlScriptConfig;
@@ -102,9 +103,30 @@ export interface MidsceneYamlScriptAndroidEnv extends MidsceneYamlScriptConfig {
   launch?: string;
 }
 
+export interface MidsceneYamlScriptIOSEnv extends MidsceneYamlScriptConfig {
+  // PyAutoGUI server configuration
+  serverUrl?: string;
+  serverPort?: number;
+  
+  // Auto dismiss keyboard after input (optional)
+  autoDismissKeyboard?: boolean;
+  
+  // iOS device mirroring configuration for precise location targeting
+  mirrorConfig?: {
+    mirrorX: number;
+    mirrorY: number;
+    mirrorWidth: number;
+    mirrorHeight: number;
+  };
+
+  // The URL or app to launch, optional, will use the current screen if not specified
+  launch?: string;
+}
+
 export type MidsceneYamlScriptEnv =
   | MidsceneYamlScriptWebEnv
   | MidsceneYamlScriptAndroidEnv
+  | MidsceneYamlScriptIOSEnv
   | MidsceneYamlScriptEnvGeneralInterface;
 
 export interface MidsceneYamlFlowItemAIAction {

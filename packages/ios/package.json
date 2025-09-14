@@ -2,6 +2,7 @@
   "name": "@midscene/ios",
   "version": "0.1.0",
   "description": "Midscene.js for iOS automation",
+  "type": "module",
   "main": "./dist/lib/index.js",
   "types": "./dist/lib/index.d.ts",
   "exports": {

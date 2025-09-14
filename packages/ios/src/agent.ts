@@ -29,6 +29,11 @@ export class iOSAgent extends PageAgent<iOSDevice> {
     }
     return this.connectionPromise;
   }
+
+  async launch(uri: string): Promise<void> {
+    await this.ensureConnected();
+    await this.page.launch(uri);
+  }
 }
 
 export async function agentFromPyAutoGUI(opts?: iOSAgentOpt & iOSDeviceOpt) {

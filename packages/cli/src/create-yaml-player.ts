@@ -68,6 +68,7 @@ export async function createYamlPlayer(
       const targetCount = [
         typeof webTarget !== 'undefined',
         typeof yamlScript.android !== 'undefined',
+        typeof yamlScript.ios !== 'undefined',
         typeof yamlScript.interface !== 'undefined',
       ].filter(Boolean).length;
 
@@ -75,11 +76,12 @@ export async function createYamlPlayer(
         const specifiedTargets = [
           typeof webTarget !== 'undefined' ? 'web' : null,
           typeof yamlScript.android !== 'undefined' ? 'android' : null,
+          typeof yamlScript.ios !== 'undefined' ? 'ios' : null,
           typeof yamlScript.interface !== 'undefined' ? 'interface' : null,
         ].filter(Boolean);
 
         throw new Error(
-          `Only one target type can be specified, but found multiple: ${specifiedTargets.join(', ')}. Please specify only one of: web, android, or interface.`,
+          `Only one target type can be specified, but found multiple: ${specifiedTargets.join(', ')}. Please specify only one of: web, android, ios, or interface.`,
         );
       }
 
@@ -185,6 +187,30 @@ export async function createYamlPlayer(
         return { agent, freeFn };
       }
 
+      // handle ios
+      if (typeof yamlScript.ios !== 'undefined') {
+        const iosTarget = yamlScript.ios;
+        const { agentFromPyAutoGUI } = await import('@midscene/ios');
+        
+        const agent = await agentFromPyAutoGUI({
+          serverUrl: iosTarget.serverUrl,
+          serverPort: iosTarget.serverPort,
+          autoDismissKeyboard: iosTarget.autoDismissKeyboard,
+          mirrorConfig: iosTarget.mirrorConfig,
+        });
+
+        if (iosTarget?.launch) {
+          await agent.launch(iosTarget.launch);
+        }
+
+        freeFn.push({
+          name: 'destroy_ios_agent',
+          fn: () => agent.destroy(),
+        });
+
+        return { agent, freeFn };
+      }
+
       // handle general interface
       if (typeof yamlScript.interface !== 'undefined') {
         const interfaceTarget = yamlScript.interface;
@@ -241,7 +267,7 @@ export async function createYamlPlayer(
       }
 
       throw new Error(
-        'No valid interface configuration found in the yaml script, should be either "web", "android", or "interface"',
+        'No valid interface configuration found in the yaml script, should be either "web", "android", "ios", or "interface"',
       );
     },
     undefined,

@@ -29,11 +29,12 @@ export { Executor, Insight, getVersion };
 
 export type {
   MidsceneYamlScript,
-  MidsceneYamlTask,
+  MidsceneYamlTask,  
   MidsceneYamlFlowItem,
   MidsceneYamlConfigResult,
   MidsceneYamlScriptWebEnv,
   MidsceneYamlScriptAndroidEnv,
+  MidsceneYamlScriptIOSEnv,
   MidsceneYamlConfig,
   LocateOption,
   DetailedLocateParam,
