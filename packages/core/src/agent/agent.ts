@@ -1198,6 +1198,13 @@ export class Agent<
     };
   }
 
+  async aiLocateMultiple(
+    prompts: TUserPrompt | TUserPrompt[],
+    opt?: LocateOption & { freezeContext?: boolean },
+  ) {
+    return this.aiLocate(prompts, opt);
+  }
+
   private async locateAll(
     prompts: TUserPrompt | TUserPrompt[],
     opt?: LocateOption & {
