@@ -156,18 +156,13 @@ export class Agent<
   InterfaceType extends AbstractInterface = AbstractInterface,
 > {
   private static isValidLocatePromptItem(item: unknown): boolean {
-    if (typeof item === 'string') {
-      return true;
-    }
-    if (
-      item &&
-      typeof item === 'object' &&
-      'prompt' in item &&
-      typeof (item as { prompt?: unknown }).prompt === 'string'
-    ) {
-      return true;
-    }
-    return false;
+    return (
+      typeof item === 'string' ||
+      (item &&
+        typeof item === 'object' &&
+        'prompt' in item &&
+        typeof (item as { prompt?: unknown }).prompt === 'string')
+    );
   }
   interface: InterfaceType;
 
