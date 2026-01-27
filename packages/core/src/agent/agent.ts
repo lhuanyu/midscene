@@ -155,6 +155,20 @@ export type AiActOptions = {
 export class Agent<
   InterfaceType extends AbstractInterface = AbstractInterface,
 > {
+  private static isValidLocatePromptItem(item: unknown): boolean {
+    if (typeof item === 'string') {
+      return true;
+    }
+    if (
+      item &&
+      typeof item === 'object' &&
+      'prompt' in item &&
+      typeof (item as { prompt?: unknown }).prompt === 'string'
+    ) {
+      return true;
+    }
+    return false;
+  }
   interface: InterfaceType;
 
   service: Service;
@@ -1143,20 +1157,9 @@ export class Agent<
     opt?: LocateOption & { freezeContext?: boolean },
   ) {
     if (Array.isArray(prompt)) {
-      const invalidPrompt = prompt.find((item) => {
-        if (typeof item === 'string') {
-          return false;
-        }
-        if (
-          item &&
-          typeof item === 'object' &&
-          'prompt' in item &&
-          typeof item.prompt === 'string'
-        ) {
-          return false;
-        }
-        return true;
-      });
+      const invalidPrompt = prompt.find(
+        (item) => !Agent.isValidLocatePromptItem(item),
+      );
       assert(
         !invalidPrompt,
         'aiLocate only supports prompt strings or objects with a prompt property',
