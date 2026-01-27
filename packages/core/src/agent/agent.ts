@@ -1138,7 +1138,21 @@ export class Agent<
     return verifyResult;
   }
 
-  async aiLocate(prompt: TUserPrompt, opt?: LocateOption) {
+  async aiLocate(
+    prompt: TUserPrompt | TUserPrompt[],
+    opt?: LocateOption & { freezeContext?: boolean },
+  ) {
+    if (Array.isArray(prompt)) {
+      const invalidPrompt = prompt.find(
+        (item) => item && typeof item === 'object' && !('prompt' in item),
+      );
+      assert(!invalidPrompt, 'aiLocate only supports prompt strings or objects');
+      return this.locateAll(prompt, {
+        ...opt,
+        freezeContext: opt?.freezeContext ?? true,
+      });
+    }
+
     const locateParam = buildDetailedLocateParam(prompt, opt);
     assert(locateParam, 'cannot get locate param for aiLocate');
     const locatePlan = locatePlanForLocate(locateParam);
