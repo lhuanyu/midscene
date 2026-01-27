@@ -1147,12 +1147,20 @@ export class Agent<
         if (typeof item === 'string') {
           return false;
         }
-        if (item && typeof item === 'object' && 'prompt' in item) {
+        if (
+          item &&
+          typeof item === 'object' &&
+          'prompt' in item &&
+          typeof item.prompt === 'string'
+        ) {
           return false;
         }
         return true;
       });
-      assert(!invalidPrompt, 'aiLocate only supports prompt strings or objects');
+      assert(
+        !invalidPrompt,
+        'aiLocate only supports prompt strings or objects with a prompt property',
+      );
       return this.locateAll(prompt, {
         ...opt,
         freezeContext: opt?.freezeContext ?? true,
