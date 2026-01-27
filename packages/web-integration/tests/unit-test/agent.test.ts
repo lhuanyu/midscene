@@ -212,10 +212,7 @@ describe('PageAgent RightClick', () => {
 
   it('should reject invalid prompt objects in aiLocate arrays', async () => {
     await expect(
-      agent.aiLocate([
-        'blue button',
-        { text: 'bad' } as unknown as { prompt: string },
-      ]),
+      agent.aiLocate(['blue button', { text: 'bad' } as any]),
     ).rejects.toThrow('aiLocate only supports prompt strings or objects');
     expect(mockTaskExecutor.runPlans).not.toHaveBeenCalled();
   });

@@ -1143,9 +1143,15 @@ export class Agent<
     opt?: LocateOption & { freezeContext?: boolean },
   ) {
     if (Array.isArray(prompt)) {
-      const invalidPrompt = prompt.find(
-        (item) => item && typeof item === 'object' && !('prompt' in item),
-      );
+      const invalidPrompt = prompt.find((item) => {
+        if (typeof item === 'string') {
+          return false;
+        }
+        if (item && typeof item === 'object' && 'prompt' in item) {
+          return false;
+        }
+        return true;
+      });
       assert(!invalidPrompt, 'aiLocate only supports prompt strings or objects');
       return this.locateAll(prompt, {
         ...opt,
