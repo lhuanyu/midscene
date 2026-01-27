@@ -160,7 +160,7 @@ export class Agent<
       !!item &&
       typeof item === 'object' &&
       'prompt' in item &&
-      typeof (item as any).prompt === 'string'
+      typeof item.prompt === 'string'
     );
   }
 
@@ -1203,6 +1203,8 @@ export class Agent<
 
   /**
    * Alias of {@link Agent.aiLocate} for callers that prefer a dedicated multi-locate API.
+   * Returns the same shape as aiLocate: a single result for string input, or
+   * an array of results for array input.
    */
   async aiLocateMultiple(
     prompts: TUserPrompt | TUserPrompt[],
