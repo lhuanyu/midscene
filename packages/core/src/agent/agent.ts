@@ -155,14 +155,17 @@ export type AiActOptions = {
 export class Agent<
   InterfaceType extends AbstractInterface = AbstractInterface,
 > {
-  private static isValidLocatePromptItem(item: unknown): boolean {
+  private static hasPromptProperty(item: unknown): item is { prompt: string } {
     return (
-      typeof item === 'string' ||
-      (item &&
-        typeof item === 'object' &&
-        'prompt' in item &&
-        typeof (item as { prompt?: unknown }).prompt === 'string')
+      !!item &&
+      typeof item === 'object' &&
+      'prompt' in item &&
+      typeof (item as { prompt: unknown }).prompt === 'string'
     );
+  }
+
+  private static isValidLocatePromptItem(item: unknown): boolean {
+    return typeof item === 'string' || Agent.hasPromptProperty(item);
   }
   interface: InterfaceType;
 
