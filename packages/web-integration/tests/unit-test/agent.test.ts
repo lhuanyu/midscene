@@ -162,6 +162,62 @@ describe('PageAgent RightClick', () => {
     mockTaskExecutor.runPlans.mockResolvedValue(mockExecutorResult);
     await agent.aiRightClick('button to right click');
   });
+
+  it('should locate multiple prompts with aiLocate', async () => {
+    const mockExecutorResult = {
+      output: [
+        {
+          rect: { left: 1, top: 2, width: 3, height: 4 },
+          center: [2, 4],
+        },
+        {
+          rect: { left: 5, top: 6, width: 7, height: 8 },
+          center: [8, 10],
+        },
+      ],
+    };
+
+    mockTaskExecutor.runPlans.mockResolvedValue(mockExecutorResult);
+
+    const result = await agent.aiLocate(['blue button', 'red button']);
+
+    expect(result).toEqual([
+      {
+        rect: { left: 1, top: 2, width: 3, height: 4 },
+        center: [2, 4],
+        dpr: 1,
+      },
+      {
+        rect: { left: 5, top: 6, width: 7, height: 8 },
+        center: [8, 10],
+        dpr: 1,
+      },
+    ]);
+    expect(mockTaskExecutor.runPlans).toHaveBeenCalledWith(
+      'Locate 2 elements',
+      [
+        {
+          type: 'LocateMulti',
+          param: [
+            { prompt: 'blue button', deepThink: false, cacheable: true },
+            { prompt: 'red button', deepThink: false, cacheable: true },
+          ],
+          thought: '',
+        },
+      ],
+      modelConfigCalcByMockedModelConfig,
+      modelConfigCalcByMockedModelConfig,
+    );
+  });
+
+  it('should reject invalid prompt objects in aiLocate arrays', async () => {
+    await expect(
+      agent.aiLocate(['blue button', { text: 'bad' } as any]),
+    ).rejects.toThrow(
+      'aiLocate only supports prompt strings or objects with a prompt property',
+    );
+    expect(mockTaskExecutor.runPlans).not.toHaveBeenCalled();
+  });
 });
 
 describe('PageAgent logContent', () => {

@@ -144,6 +144,7 @@ export const PlaywrightAiFixture = (options?: {
       | 'aiAssert'
       | 'aiWaitFor'
       | 'aiLocate'
+      | 'aiLocateMultiple'
       | 'aiNumber'
       | 'aiString'
       | 'aiBoolean'
@@ -459,6 +460,18 @@ export const PlaywrightAiFixture = (options?: {
         aiActionType: 'aiLocate',
       });
     },
+    aiLocateMultiple: async (
+      { page }: { page: OriginPlaywrightPage },
+      use: any,
+      testInfo: TestInfo,
+    ) => {
+      await generateAiFunction({
+        page,
+        testInfo,
+        use,
+        aiActionType: 'aiLocateMultiple',
+      });
+    },
     aiNumber: async (
       { page }: { page: OriginPlaywrightPage },
       use: any,
@@ -638,6 +651,9 @@ export type PlayWrightAiFixtureType = {
   aiLocate: (
     ...args: Parameters<PageAgent['aiLocate']>
   ) => ReturnType<PageAgent['aiLocate']>;
+  aiLocateMultiple: (
+    ...args: Parameters<PageAgent['aiLocateMultiple']>
+  ) => ReturnType<PageAgent['aiLocateMultiple']>;
   aiNumber: (
     ...args: Parameters<PageAgent['aiNumber']>
   ) => ReturnType<PageAgent['aiNumber']>;

@@ -155,6 +155,18 @@ export type AiActOptions = {
 export class Agent<
   InterfaceType extends AbstractInterface = AbstractInterface,
 > {
+  private static hasPromptProperty(item: unknown): item is { prompt: string } {
+    return (
+      item !== null &&
+      typeof item === 'object' &&
+      'prompt' in item &&
+      typeof item.prompt === 'string'
+    );
+  }
+
+  private static isValidLocatePromptItem(item: unknown): boolean {
+    return typeof item === 'string' || Agent.hasPromptProperty(item);
+  }
   interface: InterfaceType;
 
   service: Service;
@@ -1133,7 +1145,24 @@ export class Agent<
     return verifyResult;
   }
 
-  async aiLocate(prompt: TUserPrompt, opt?: LocateOption) {
+  async aiLocate(
+    prompt: TUserPrompt | TUserPrompt[],
+    opt?: LocateOption & { freezeContext?: boolean },
+  ) {
+    if (Array.isArray(prompt)) {
+      const invalidPrompt = prompt.find(
+        (item) => !Agent.isValidLocatePromptItem(item),
+      );
+      assert(
+        !invalidPrompt,
+        'aiLocate only supports prompt strings or objects with a prompt property',
+      );
+      return this.locateAll(prompt, {
+        ...opt,
+        freezeContext: opt?.freezeContext ?? true,
+      });
+    }
+
     const locateParam = buildDetailedLocateParam(prompt, opt);
     assert(locateParam, 'cannot get locate param for aiLocate');
     const locatePlan = locatePlanForLocate(locateParam);
@@ -1165,6 +1194,19 @@ export class Agent<
     } as Pick<LocateResultElement, 'rect' | 'center'> & {
       dpr?: number; // this field is deprecated
     };
+  }
+
+  /**
+   * Alias of {@link Agent.aiLocate} for callers that prefer a dedicated multi-locate API.
+   * Returns the same shape as aiLocate: a single result for string input, or
+   * an array of results for array input.
+   * Accepts either a single prompt or an array of prompts.
+   */
+  async aiLocateMultiple(
+    prompts: TUserPrompt | TUserPrompt[],
+    opt?: LocateOption & { freezeContext?: boolean },
+  ) {
+    return this.aiLocate(prompts, opt);
   }
 
   private async locateAll(
