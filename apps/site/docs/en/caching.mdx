@@ -225,6 +225,20 @@ export const test = base.extend<PlayWrightAiFixtureType>(
 
 In write-only mode, each test will call the AI model and automatically write results to cache file without reading existing cache.
 
+## Prompt Memory Controls
+
+In addition to general cache cleanup, Midscene also provides prompt-memory cleanup APIs on `agent`:
+
+- `agent.clearMemoryByPrompt(prompt)`: remove memory records derived from a prompt.
+- `agent.clearAllMemory()`: remove all memory records created by locate-related APIs.
+
+Example:
+
+```typescript
+await agent.clearMemoryByPrompt('The login button at the top of the page');
+await agent.clearAllMemory();
+```
+
 ## Cache Cleaning
 
 Midscene supports cleaning unused cache records when flushing cache to file, ensuring cache files stay lean and maintainable. This feature is **completely manual** and requires explicit call to `agent.flushCache({ cleanUnused: true })`.

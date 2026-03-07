@@ -227,6 +227,20 @@ export const test = base.extend<PlayWrightAiFixtureType>(
 
 在只写模式下，每次测试都会调用 AI 模型，并将结果自动写入缓存文件，不会读取已有缓存。
 
+## Prompt 记忆清理
+
+除了通用缓存清理外，Midscene 还提供了基于 prompt 记忆的清理接口：
+
+- `agent.clearMemoryByPrompt(prompt)`：清理由该 prompt 派生的记忆记录。
+- `agent.clearAllMemory()`：清理所有由定位相关 API 产生的记忆记录。
+
+示例：
+
+```typescript
+await agent.clearMemoryByPrompt('页面顶部的登录按钮');
+await agent.clearAllMemory();
+```
+
 ## 缓存清理
 
 Midscene 支持在写入缓存时清理未使用的缓存记录，确保缓存文件保持精简。这个功能是**完全手动**的,需要显式调用 `agent.flushCache({ cleanUnused: true })`。

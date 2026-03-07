@@ -124,9 +124,9 @@ export class TaskCache {
     if (!this.isCacheResultUsed) {
       return undefined;
     }
-    // Find the first unused matching cache
     const promptStr =
       typeof prompt === 'string' ? prompt : JSON.stringify(prompt);
+
     for (let i = 0; i < this.cacheOriginalLength; i++) {
       const item = this.cache.caches[i];
       const key = `${type}:${promptStr}:${i}`;
@@ -192,10 +192,76 @@ export class TaskCache {
 
   matchLocateCache(
     prompt: TUserPrompt,
+    options?: {
+      reusable?: boolean;
+    },
   ): MatchCacheResult<LocateCache> | undefined {
-    return this.matchCache(prompt, 'locate') as
-      | MatchCacheResult<LocateCache>
-      | undefined;
+    if (!this.isCacheResultUsed) {
+      return undefined;
+    }
+
+    if (!options?.reusable) {
+      return this.matchCache(prompt, 'locate') as
+        | MatchCacheResult<LocateCache>
+        | undefined;
+    }
+
+    for (let i = 0; i < this.cache.caches.length; i++) {
+      const item = this.cache.caches[i];
+      if (item.type !== 'locate' || !isDeepStrictEqual(item.prompt, prompt)) {
+        continue;
+      }
+
+      const locateItem = item as LocateCache;
+      if (!locateItem.cache && Array.isArray(locateItem.xpaths)) {
+        locateItem.cache = { xpaths: locateItem.xpaths };
+      }
+      if ('xpaths' in locateItem) {
+        locateItem.xpaths = undefined;
+      }
+
+      debug(
+        'cache found with reusable mode, type: %s, prompt: %s, index: %d',
+        'locate',
+        prompt,
+        i,
+      );
+
+      return {
+        cacheContent: locateItem,
+        updateFn: (cb: (cache: LocateCache) => void) => {
+          debug(
+            'will call updateFn to update cache, type: %s, prompt: %s, index: %d',
+            'locate',
+            prompt,
+            i,
+          );
+          cb(locateItem);
+
+          if (this.readOnlyMode) {
+            debug(
+              'read-only mode, cache updated in memory but not flushed to file',
+            );
+            return;
+          }
+
+          debug(
+            'cache updated, will flush to file, type: %s, prompt: %s, index: %d',
+            'locate',
+            prompt,
+            i,
+          );
+          this.flushCacheToFile();
+        },
+      };
+    }
+
+    debug(
+      'no cache found in reusable mode, type: %s, prompt: %s',
+      'locate',
+      prompt,
+    );
+    return undefined;
   }
 
   appendCache(cache: PlanningCache | LocateCache) {
@@ -367,5 +433,52 @@ export class TaskCache {
     } else {
       this.appendCache(newRecord);
     }
+  }
+
+  removeLocateCache(prompt: TUserPrompt): number {
+    return this.removeLocateCachesBy((item) => isDeepStrictEqual(item.prompt, prompt));
+  }
+
+  removeLocateCachesByPrefix(prefix: string): number {
+    const normalizedPrefix = prefix.trim();
+    if (!normalizedPrefix) {
+      return 0;
+    }
+    return this.removeLocateCachesBy(
+      (item) =>
+        typeof item.prompt === 'string' && item.prompt.startsWith(normalizedPrefix),
+    );
+  }
+
+  removeAllLocateCaches(): number {
+    return this.removeLocateCachesBy(() => true);
+  }
+
+  private removeLocateCachesBy(predicate: (item: LocateCache) => boolean): number {
+    const originalLength = this.cache.caches.length;
+    this.cache.caches = this.cache.caches.filter((item) => {
+      if (item.type !== 'locate') {
+        return true;
+      }
+      return !predicate(item as LocateCache);
+    });
+    const removed = originalLength - this.cache.caches.length;
+    if (removed <= 0) {
+      return 0;
+    }
+
+    // Index-based match map is no longer valid after removal.
+    this.matchedCacheIndices.clear();
+    this.cacheOriginalLength = this.isCacheResultUsed
+      ? this.cache.caches.length
+      : 0;
+
+    if (this.readOnlyMode) {
+      debug('read-only mode, locate cache removed in memory only');
+      return removed;
+    }
+
+    this.flushCacheToFile();
+    return removed;
   }
 }

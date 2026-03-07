@@ -505,6 +505,7 @@ const MidsceneLocationInput = z
       .optional()
       .describe('@deprecated Use `deepLocate` instead.'),
     cacheable: z.boolean().optional(),
+    useMemory: z.boolean().optional(),
     xpath: z.union([z.string(), z.boolean()]).optional(),
   })
   .passthrough();

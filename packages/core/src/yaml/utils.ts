@@ -76,6 +76,8 @@ export function buildDetailedLocateParam(
   let prompt = locatePrompt || opt?.prompt || (opt as any)?.locate; // as a shortcut
   let deepLocate = false;
   let cacheable = true;
+  let memory = undefined;
+  let useMemory = undefined;
   let xpath = undefined;
 
   if (typeof opt === 'object' && opt !== null) {
@@ -85,7 +87,13 @@ export function buildDetailedLocateParam(
     // the rest of the call stack.
     deepLocate = opt.deepLocate ?? opt.deepThink ?? false;
     cacheable = opt.cacheable ?? true;
+    const rawMemory = opt.memory;
+    memory = rawMemory?.trim() || undefined;
+    useMemory = opt.useMemory;
     xpath = opt.xpath;
+    if (rawMemory !== undefined && !memory) {
+      throw new Error('memory must be a non-empty string when provided');
+    }
     if (locatePrompt && opt.prompt && locatePrompt !== opt.prompt) {
       console.warn(
         'conflict prompt for item',
@@ -109,6 +117,8 @@ export function buildDetailedLocateParam(
     prompt,
     deepLocate,
     cacheable,
+    memory,
+    useMemory,
     xpath,
   };
 }
@@ -130,7 +140,7 @@ export function buildDetailedLocateParamAndRestParams(
     // Get all keys from opt
     const allKeys = Object.keys(opt);
 
-    // Keys already included in locateParam: prompt, deepLocate, cacheable, xpath
+    // Keys already included in locateParam: prompt, deepLocate, cacheable, memory, useMemory, xpath
     const locateParamKeys = Object.keys(locateParam || {});
 
     // Extract all other keys

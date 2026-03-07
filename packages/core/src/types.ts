@@ -1078,6 +1078,25 @@ export interface AgentOpt {
   waitAfterAction?: number;
 
   /**
+   * Remember action targets by prompt for action APIs (aiTap/aiInput/etc.).
+   *
+   * This improves repeated locate performance in continuous operations by
+   * reusing memory-backed locate cache entries.
+   *
+   * @default true
+   */
+  rememberActionTargets?: boolean;
+
+  /**
+   * Remember locate targets by prompt for aiLocate/aiLocateAll.
+   * For aiLocate with prompt arrays, duplicate prompts are disambiguated with
+   * an internal `#index` suffix on the same base hash.
+   *
+   * @default true
+   */
+  rememberLocateTargets?: boolean;
+
+  /**
    * When set to true, Midscene will use the target device's time (Android/iOS)
    * instead of the system time. Useful when the device time differs from the
    * host machine. Default: false

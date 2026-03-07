@@ -1,4 +1,4 @@
-import type { TUserPrompt } from '../ai-model/index';
+import { findAllMidsceneLocatorField, type TUserPrompt } from '../ai-model/index';
 import { ScreenshotItem } from '../screenshot-item';
 import Service from '../service/index';
 // Import types and values directly from their source files to avoid circular dependency
@@ -66,6 +66,11 @@ import { getDebug } from '@midscene/shared/logger';
 import { assert, ifInBrowser, uuid } from '@midscene/shared/utils';
 import { defineActionSleep } from '../device';
 import { TaskCache } from './task-cache';
+import {
+  buildMemoryCachePrefixByPrompt,
+  buildMemoryCachePrompt,
+  normalizePromptForMemory,
+} from './memory-utils';
 import {
   TaskExecutionError,
   TaskExecutor,
@@ -214,6 +219,58 @@ export class Agent<
   private fullActionSpace: DeviceAction[];
 
   private reportGenerator: IReportGenerator;
+
+  private shouldAutoMemoryForAction(): boolean {
+    return this.opts?.rememberActionTargets ?? true;
+  }
+
+  private shouldAutoMemoryForLocate(): boolean {
+    return this.opts?.rememberLocateTargets ?? true;
+  }
+
+  private withAutoMemoryForAction(
+    locatePrompt: TUserPrompt | undefined,
+    opt?: LocateOption,
+  ): LocateOption | undefined {
+    const resolvedUseMemory = opt?.useMemory ?? false;
+
+    if (!this.shouldAutoMemoryForAction()) {
+      return opt ? { ...opt, useMemory: resolvedUseMemory } : undefined;
+    }
+
+    const autoMemoryPrompt = buildMemoryCachePrompt(locatePrompt);
+    if (!autoMemoryPrompt) {
+      return opt ? { ...opt, useMemory: resolvedUseMemory } : undefined;
+    }
+
+    return {
+      ...(opt || {}),
+      memory: autoMemoryPrompt,
+      useMemory: resolvedUseMemory,
+    };
+  }
+
+  private withAutoMemoryForLocate(
+    locatePrompt: TUserPrompt | undefined,
+    opt?: LocateOption,
+  ): LocateOption | undefined {
+    const resolvedUseMemory = opt?.useMemory ?? true;
+
+    if (!this.shouldAutoMemoryForLocate()) {
+      return opt ? { ...opt, useMemory: resolvedUseMemory } : undefined;
+    }
+
+    const autoMemoryPrompt = buildMemoryCachePrompt(locatePrompt);
+    if (!autoMemoryPrompt) {
+      return opt ? { ...opt, useMemory: resolvedUseMemory } : undefined;
+    }
+
+    return {
+      ...(opt || {}),
+      memory: autoMemoryPrompt,
+      useMemory: resolvedUseMemory,
+    };
+  }
 
   // @deprecated use .interface instead
   get page() {
@@ -472,15 +529,67 @@ export class Agent<
     };
   }
 
+  private withAutoMemoryForActionInActionParams<T = any>(
+    type: string,
+    opt?: T,
+  ): T | undefined {
+    if (!opt || typeof opt !== 'object') {
+      return opt;
+    }
+
+    const action = this.fullActionSpace.find((item) => item.name === type);
+    if (!action?.paramSchema) {
+      return opt;
+    }
+
+    const locateFields = findAllMidsceneLocatorField(action.paramSchema);
+    if (locateFields.length === 0) {
+      return opt;
+    }
+
+    let nextOpt = opt as Record<string, any>;
+    let changed = false;
+
+    for (const field of locateFields) {
+      const locateParam = nextOpt[field];
+      if (
+        !locateParam ||
+        typeof locateParam !== 'object' ||
+        !Object.prototype.hasOwnProperty.call(locateParam, 'prompt')
+      ) {
+        continue;
+      }
+
+      const locatePrompt = (locateParam as { prompt?: TUserPrompt }).prompt;
+      const updatedLocateParam = this.withAutoMemoryForAction(
+        locatePrompt,
+        locateParam as LocateOption,
+      );
+
+      if (!updatedLocateParam) {
+        continue;
+      }
+
+      if (!changed) {
+        nextOpt = { ...(opt as Record<string, any>) };
+        changed = true;
+      }
+      nextOpt[field] = updatedLocateParam;
+    }
+
+    return changed ? (nextOpt as T) : opt;
+  }
+
   async callActionInActionSpace<T = any>(
     type: string,
     opt?: T, // and all other action params
   ) {
-    debug('callActionInActionSpace', type, ',', opt);
+    const actionParams = this.withAutoMemoryForActionInActionParams(type, opt);
+    debug('callActionInActionSpace', type, ',', actionParams);
 
     const actionPlan: PlanningAction<T> = {
       type: type as any,
-      param: (opt as any) || {},
+      param: (actionParams as any) || {},
       thought: '',
     };
     debug('actionPlan', actionPlan); // , ', in which the locateParam is', locateParam);
@@ -515,7 +624,8 @@ export class Agent<
   ) {
     assert(locatePrompt, 'missing locate prompt for tap');
 
-    const detailedLocateParam = buildDetailedLocateParam(locatePrompt, opt);
+    const locateOpt = this.withAutoMemoryForAction(locatePrompt, opt);
+    const detailedLocateParam = buildDetailedLocateParam(locatePrompt, locateOpt);
 
     const fileChooserAccept = opt?.fileChooserAccept
       ? this.normalizeFileInput(opt.fileChooserAccept)
@@ -531,7 +641,11 @@ export class Agent<
   async aiRightClick(locatePrompt: TUserPrompt, opt?: LocateOption) {
     assert(locatePrompt, 'missing locate prompt for right click');
 
-    const detailedLocateParam = buildDetailedLocateParam(locatePrompt, opt);
+    const locateOpt = this.withAutoMemoryForAction(locatePrompt, opt);
+    const detailedLocateParam = buildDetailedLocateParam(
+      locatePrompt,
+      locateOpt,
+    );
 
     return this.callActionInActionSpace('RightClick', {
       locate: detailedLocateParam,
@@ -541,7 +655,11 @@ export class Agent<
   async aiDoubleClick(locatePrompt: TUserPrompt, opt?: LocateOption) {
     assert(locatePrompt, 'missing locate prompt for double click');
 
-    const detailedLocateParam = buildDetailedLocateParam(locatePrompt, opt);
+    const locateOpt = this.withAutoMemoryForAction(locatePrompt, opt);
+    const detailedLocateParam = buildDetailedLocateParam(
+      locatePrompt,
+      locateOpt,
+    );
 
     return this.callActionInActionSpace('DoubleClick', {
       locate: detailedLocateParam,
@@ -551,7 +669,11 @@ export class Agent<
   async aiHover(locatePrompt: TUserPrompt, opt?: LocateOption) {
     assert(locatePrompt, 'missing locate prompt for hover');
 
-    const detailedLocateParam = buildDetailedLocateParam(locatePrompt, opt);
+    const locateOpt = this.withAutoMemoryForAction(locatePrompt, opt);
+    const detailedLocateParam = buildDetailedLocateParam(
+      locatePrompt,
+      locateOpt,
+    );
 
     return this.callActionInActionSpace('Hover', {
       locate: detailedLocateParam,
@@ -628,7 +750,11 @@ export class Agent<
     );
     assert(locatePrompt, 'missing locate prompt for input');
 
-    const detailedLocateParam = buildDetailedLocateParam(locatePrompt, opt);
+    const locateOpt = this.withAutoMemoryForAction(locatePrompt, opt);
+    const detailedLocateParam = buildDetailedLocateParam(
+      locatePrompt,
+      locateOpt,
+    );
 
     // Convert value to string to ensure consistency
     const stringValue = typeof value === 'number' ? String(value) : value;
@@ -697,7 +823,10 @@ export class Agent<
     assert(opt?.keyName, 'missing keyName for keyboard press');
 
     const detailedLocateParam = locatePrompt
-      ? buildDetailedLocateParam(locatePrompt, opt)
+      ? buildDetailedLocateParam(
+          locatePrompt,
+          this.withAutoMemoryForAction(locatePrompt, opt),
+        )
       : undefined;
 
     return this.callActionInActionSpace('KeyboardPress', {
@@ -768,10 +897,8 @@ export class Agent<
       }
     }
 
-    const detailedLocateParam = buildDetailedLocateParam(
-      locatePrompt || '',
-      opt,
-    );
+    const locateOpt = this.withAutoMemoryForAction(locatePrompt, opt);
+    const detailedLocateParam = buildDetailedLocateParam(locatePrompt || '', locateOpt);
 
     return this.callActionInActionSpace('Scroll', {
       ...(opt || {}),
@@ -1082,9 +1209,48 @@ export class Agent<
     opt?: LocateOption,
   ) {
     if (Array.isArray(promptOrPrompts)) {
-      const detailedParams = promptOrPrompts.map((prompt) =>
-        buildDetailedLocateParam(prompt, opt),
-      );
+      const baseLocateOpt: LocateOption | undefined = opt ? { ...opt } : undefined;
+      const shouldAutoMemory = this.shouldAutoMemoryForLocate();
+      const duplicatedPromptCounter = new Map<string, number>();
+
+      const detailedParams = promptOrPrompts.map((prompt, index) => {
+        let locateOptForPrompt: LocateOption | undefined = baseLocateOpt
+          ? {
+              ...baseLocateOpt,
+            }
+          : undefined;
+
+        if (shouldAutoMemory) {
+          const duplicateKey = normalizePromptForMemory(prompt);
+          const duplicateIndex = duplicateKey
+            ? (duplicatedPromptCounter.get(duplicateKey) ?? 0)
+            : 0;
+          if (duplicateKey) {
+            duplicatedPromptCounter.set(duplicateKey, duplicateIndex + 1);
+          }
+          const autoMemoryPrompt = buildMemoryCachePrompt(prompt, {
+            duplicateIndex,
+          });
+          if (autoMemoryPrompt) {
+            if (!locateOptForPrompt) {
+              locateOptForPrompt = {};
+            }
+            locateOptForPrompt.memory = autoMemoryPrompt;
+          }
+        }
+
+        const normalizedLocateOpt = locateOptForPrompt
+          ? {
+              ...locateOptForPrompt,
+              memory: locateOptForPrompt.memory || undefined,
+              useMemory: locateOptForPrompt.useMemory ?? true,
+            }
+          : undefined;
+
+        const detailedParam = buildDetailedLocateParam(prompt, normalizedLocateOpt);
+        assert(detailedParam, `cannot get locate param for aiLocate at index ${index}`);
+        return detailedParam;
+      });
 
       const plan = {
         type: 'LocateMultiple',
@@ -1120,7 +1286,10 @@ export class Agent<
       });
     }
 
-    const locateParam = buildDetailedLocateParam(promptOrPrompts, opt);
+    const locateParam = buildDetailedLocateParam(
+      promptOrPrompts,
+      this.withAutoMemoryForLocate(promptOrPrompts, opt),
+    );
     assert(locateParam, 'cannot get locate param for aiLocate');
     const locatePlan = locatePlanForLocate(locateParam);
     const plans = [locatePlan];
@@ -1155,7 +1324,10 @@ export class Agent<
       dpr?: number;
     }>
   > {
-    const detailedParam = buildDetailedLocateParam(prompt, opt);
+    const detailedParam = buildDetailedLocateParam(
+      prompt,
+      this.withAutoMemoryForLocate(prompt, opt),
+    );
     assert(detailedParam, 'cannot get locate param for aiLocateAll');
     const plan = {
       type: 'LocateAll',
@@ -1578,6 +1750,29 @@ export class Agent<
     }
 
     this.taskCache.flushCacheToFile(options);
+  }
+
+  clearMemoryByPrompt(prompt: TUserPrompt): number {
+    if (!this.taskCache) {
+      throw new Error('Cache is not configured');
+    }
+
+    const memoryPrefix = buildMemoryCachePrefixByPrompt(prompt);
+    if (!memoryPrefix) {
+      return 0;
+    }
+    return this.taskCache.removeLocateCachesByPrefix(memoryPrefix);
+  }
+
+  /**
+   * Clear all memory records created via locate memory keys.
+   */
+  clearAllMemory(): number {
+    if (!this.taskCache) {
+      throw new Error('Cache is not configured');
+    }
+
+    return this.taskCache.removeLocateCachesByPrefix('memory://');
   }
 }
 

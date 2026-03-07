@@ -1,4 +1,5 @@
 import { findAllMidsceneLocatorField, parseActionParam } from '@/ai-model';
+import type { TUserPrompt } from '@/ai-model';
 import type { AbstractInterface } from '@/device';
 import type Service from '@/service';
 import { setTimingFieldOnce } from '@/task-timing';
@@ -43,6 +44,17 @@ function hasNonEmptyCache(cache: unknown): boolean {
     cache !== undefined &&
     typeof cache === 'object' &&
     Object.keys(cache).length > 0
+  );
+}
+
+function isLocateAllMemoryCacheEntry(
+  cache: unknown,
+): cache is { entries: ElementCacheFeature[] } {
+  return (
+    cache !== null &&
+    cache !== undefined &&
+    typeof cache === 'object' &&
+    Array.isArray((cache as { entries?: unknown[] }).entries)
   );
 }
 
@@ -475,9 +487,18 @@ export class TaskBuilder {
 
         const isXpathHit = !!elementFromXpath;
 
-        const cachePrompt = param.prompt;
-        const locateCacheRecord = this.taskCache?.matchLocateCache(cachePrompt);
-        const cacheEntry = locateCacheRecord?.cacheContent?.cache;
+        const memoryCachePrompt = param.memory;
+        const shouldUseMemory = !memoryCachePrompt || param.useMemory === true;
+        const cachePrompt = memoryCachePrompt ?? param.prompt;
+        const locateCacheRecord = this.taskCache?.matchLocateCache(
+          cachePrompt,
+          {
+            reusable: !!memoryCachePrompt,
+          },
+        );
+        const cacheEntry = shouldUseMemory
+          ? locateCacheRecord?.cacheContent?.cache
+          : undefined;
 
         const elementFromCacheResult =
           isPlanHit || isXpathHit
@@ -699,6 +720,12 @@ export class TaskBuilder {
         }
 
         assert(uiContext, 'uiContext is required for Service task');
+        const { shrunkShotToLogicalRatio } = uiContext;
+        if (shrunkShotToLogicalRatio === undefined) {
+          throw new Error(
+            'shrunkShotToLogicalRatio is not defined in locate task',
+          );
+        }
 
         const applyDump = (dump?: ServiceDump) => {
           if (!dump) {
@@ -710,25 +737,167 @@ export class TaskBuilder {
           task.usage = dump.taskInfo?.usage;
         };
 
-        // For now, we skip cache logic for LocateMultiple to keep it simple and focused on LLM optimization
-
-        let multiResult;
-        try {
-          multiResult = await this.service.locate(
-            param,
-            { context: uiContext, mode: 'multi' },
-            modelConfigForDefaultIntent,
-          );
-          applyDump(multiResult.dump);
-        } catch (error) {
-          if (error instanceof ServiceError) {
-            applyDump(error.dump);
+        const outputs: Array<LocateResultElement | null | undefined> =
+          new Array(param.length).fill(undefined);
+        const unresolvedParams: DetailedLocateParam[] = [];
+        const unresolvedIndices: number[] = [];
+        const cacheMetaByIndex = new Map<
+          number,
+          {
+            cachePrompt: TUserPrompt;
+            locateCacheRecord: ReturnType<TaskCache['matchLocateCache']>;
+            isCacheHit: boolean;
           }
-          throw error;
+        >();
+
+        for (let index = 0; index < param.length; index++) {
+          const currentParam = param[index];
+          const memoryCachePrompt = currentParam.memory;
+          const shouldUseMemory =
+            !memoryCachePrompt || currentParam.useMemory === true;
+          const cachePrompt = memoryCachePrompt ?? currentParam.prompt;
+          const locateCacheRecord = this.taskCache?.matchLocateCache(
+            cachePrompt,
+            {
+              reusable: !!memoryCachePrompt,
+            },
+          );
+          const cacheEntry = shouldUseMemory
+            ? locateCacheRecord?.cacheContent?.cache
+            : undefined;
+
+          let rectFromXpath: Rect | undefined;
+          if (currentParam.xpath && this.interface.rectMatchesCacheFeature) {
+            try {
+              rectFromXpath = await this.interface.rectMatchesCacheFeature({
+                xpaths: [currentParam.xpath],
+              });
+            } catch {
+              // xpath locate failed, allow fallback to cache or AI locate
+            }
+          }
+
+          const elementFromXpath = rectFromXpath
+            ? generateElementByRect(
+                transformLogicalRectToScreenshotRect(
+                  rectFromXpath,
+                  shrunkShotToLogicalRatio,
+                ),
+                typeof currentParam.prompt === 'string'
+                  ? currentParam.prompt
+                  : currentParam.prompt?.prompt || '',
+              )
+            : undefined;
+
+          const elementFromCacheResult = elementFromXpath
+            ? null
+            : await matchElementFromCache(
+                {
+                  taskCache: this.taskCache,
+                  interfaceInstance: this.interface,
+                },
+                cacheEntry,
+                cachePrompt,
+                currentParam.cacheable,
+              );
+
+          const elementFromCache = elementFromCacheResult
+            ? transformLogicalElementToScreenshot(
+                elementFromCacheResult,
+                shrunkShotToLogicalRatio,
+              )
+            : undefined;
+          const element = elementFromXpath || elementFromCache;
+
+          cacheMetaByIndex.set(index, {
+            cachePrompt,
+            locateCacheRecord,
+            isCacheHit: !!elementFromCache,
+          });
+
+          if (element) {
+            outputs[index] = element;
+            continue;
+          }
+
+          unresolvedParams.push(currentParam);
+          unresolvedIndices.push(index);
+        }
+
+        if (unresolvedParams.length > 0) {
+          let multiResult;
+          try {
+            multiResult = await this.service.locate(
+              unresolvedParams,
+              { context: uiContext, mode: 'multi' },
+              modelConfigForDefaultIntent,
+            );
+            applyDump(multiResult.dump);
+          } catch (error) {
+            if (error instanceof ServiceError) {
+              applyDump(error.dump);
+            }
+            throw error;
+          }
+
+          unresolvedIndices.forEach((index, unresolvedIndex) => {
+            outputs[index] = multiResult.results[unresolvedIndex];
+          });
+        }
+
+        if (this.taskCache && this.interface.cacheFeatureForPoint) {
+          for (let index = 0; index < param.length; index++) {
+            const element = outputs[index];
+            const currentParam = param[index];
+            const cacheMeta = cacheMetaByIndex.get(index);
+
+            if (
+              !element ||
+              !cacheMeta ||
+              cacheMeta.isCacheHit ||
+              currentParam.cacheable === false
+            ) {
+              continue;
+            }
+
+            try {
+              let pointForCache: [number, number] = element.center;
+              if (shrunkShotToLogicalRatio !== 1) {
+                pointForCache = [
+                  Math.round(element.center[0] / shrunkShotToLogicalRatio),
+                  Math.round(element.center[1] / shrunkShotToLogicalRatio),
+                ];
+              }
+
+              const feature = await this.interface.cacheFeatureForPoint(
+                pointForCache,
+                {
+                  targetDescription:
+                    typeof currentParam.prompt === 'string'
+                      ? currentParam.prompt
+                      : currentParam.prompt?.prompt,
+                  modelConfig: modelConfigForDefaultIntent,
+                },
+              );
+              if (!hasNonEmptyCache(feature)) {
+                continue;
+              }
+              this.taskCache.updateOrAppendCacheRecord(
+                {
+                  type: 'locate',
+                  prompt: cacheMeta.cachePrompt,
+                  cache: feature,
+                },
+                cacheMeta.locateCacheRecord,
+              );
+            } catch (error) {
+              debug('cacheFeatureForPoint failed in LocateMultiple: %s', error);
+            }
+          }
         }
 
         return {
-          output: multiResult.results,
+          output: outputs,
         };
       },
     };
@@ -756,6 +925,12 @@ export class TaskBuilder {
         }
 
         assert(uiContext, 'uiContext is required for Service task');
+        const { shrunkShotToLogicalRatio } = uiContext;
+        if (shrunkShotToLogicalRatio === undefined) {
+          throw new Error(
+            'shrunkShotToLogicalRatio is not defined in locate task',
+          );
+        }
 
         const applyDump = (dump?: ServiceDump) => {
           if (!dump) {
@@ -766,6 +941,58 @@ export class TaskBuilder {
           };
           task.usage = dump.taskInfo?.usage;
         };
+
+        const memoryCachePrompt = param.memory;
+        const shouldUseMemory =
+          !memoryCachePrompt || param.useMemory === true;
+        const locateCacheRecord =
+          memoryCachePrompt && this.taskCache
+            ? this.taskCache.matchLocateCache(memoryCachePrompt, {
+                reusable: true,
+              })
+            : undefined;
+        const cacheEntry = shouldUseMemory
+          ? locateCacheRecord?.cacheContent?.cache
+          : undefined;
+
+        if (
+          shouldUseMemory &&
+          memoryCachePrompt &&
+          isLocateAllMemoryCacheEntry(cacheEntry) &&
+          this.interface.rectMatchesCacheFeature
+        ) {
+          const matchedElements: LocateResultElement[] = [];
+          for (const feature of cacheEntry.entries) {
+            try {
+              const logicalRect =
+                await this.interface.rectMatchesCacheFeature(feature);
+              if (!logicalRect) {
+                matchedElements.length = 0;
+                break;
+              }
+              matchedElements.push(
+                generateElementByRect(
+                  transformLogicalRectToScreenshotRect(
+                    logicalRect,
+                    shrunkShotToLogicalRatio,
+                  ),
+                  typeof param.prompt === 'string'
+                    ? param.prompt
+                    : param.prompt?.prompt || '',
+                ),
+              );
+            } catch {
+              matchedElements.length = 0;
+              break;
+            }
+          }
+
+          if (matchedElements.length > 0) {
+            return {
+              output: matchedElements,
+            };
+          }
+        }
 
         let locateResult;
         try {
@@ -780,6 +1007,59 @@ export class TaskBuilder {
             applyDump(error.dump);
           }
           throw error;
+        }
+
+        if (
+          memoryCachePrompt &&
+          this.taskCache &&
+          this.interface.cacheFeatureForPoint &&
+          Array.isArray(locateResult.results) &&
+          locateResult.results.length > 0 &&
+          param.cacheable !== false
+        ) {
+          const entries: ElementCacheFeature[] = [];
+          for (const element of locateResult.results) {
+            if (!element?.center) {
+              continue;
+            }
+            try {
+              let pointForCache: [number, number] = element.center;
+              if (shrunkShotToLogicalRatio !== 1) {
+                pointForCache = [
+                  Math.round(element.center[0] / shrunkShotToLogicalRatio),
+                  Math.round(element.center[1] / shrunkShotToLogicalRatio),
+                ];
+              }
+              const feature = await this.interface.cacheFeatureForPoint(
+                pointForCache,
+                {
+                  targetDescription:
+                    typeof param.prompt === 'string'
+                      ? param.prompt
+                      : param.prompt?.prompt,
+                  modelConfig: modelConfigForDefaultIntent,
+                },
+              );
+              if (hasNonEmptyCache(feature)) {
+                entries.push(feature);
+              }
+            } catch (error) {
+              debug('cacheFeatureForPoint failed in LocateAll: %s', error);
+            }
+          }
+
+          if (entries.length > 0) {
+            this.taskCache.updateOrAppendCacheRecord(
+              {
+                type: 'locate',
+                prompt: memoryCachePrompt,
+                cache: {
+                  entries,
+                },
+              },
+              locateCacheRecord,
+            );
+          }
         }
 
         return {
