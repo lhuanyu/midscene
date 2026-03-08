@@ -1,4 +1,7 @@
-import { findAllMidsceneLocatorField, type TUserPrompt } from '../ai-model/index';
+import {
+  type TUserPrompt,
+  findAllMidsceneLocatorField,
+} from '../ai-model/index';
 import { ScreenshotItem } from '../screenshot-item';
 import Service from '../service/index';
 // Import types and values directly from their source files to avoid circular dependency
@@ -65,12 +68,13 @@ import {
 import { getDebug } from '@midscene/shared/logger';
 import { assert, ifInBrowser, uuid } from '@midscene/shared/utils';
 import { defineActionSleep } from '../device';
-import { TaskCache } from './task-cache';
 import {
   buildMemoryCachePrefixByPrompt,
   buildMemoryCachePrompt,
   normalizePromptForMemory,
 } from './memory-utils';
+import { TaskCache } from './task-cache';
+import { TaskMemory } from './task-memory';
 import {
   TaskExecutionError,
   TaskExecutor,
@@ -174,6 +178,8 @@ export class Agent<
   onTaskStartTip?: OnTaskStartTip;
 
   taskCache?: TaskCache;
+
+  taskMemory: TaskMemory;
 
   private dumpUpdateListeners: Array<
     (dump: string, executionDump?: ExecutionDump) => void
@@ -358,6 +364,7 @@ export class Agent<
     this.service = new Service(async () => {
       return this.getUIContext();
     });
+    this.taskMemory = new TaskMemory();
 
     // Process cache configuration
     const cacheConfigObj = this.processCacheConfig(opts || {});
@@ -378,6 +385,7 @@ export class Agent<
 
     this.taskExecutor = new TaskExecutor(this.interface, this.service, {
       taskCache: this.taskCache,
+      taskMemory: this.taskMemory,
       onTaskStart: this.callbackOnTaskStartTip.bind(this),
       replanningCycleLimit: this.opts.replanningCycleLimit,
       waitAfterAction: this.opts.waitAfterAction,
@@ -625,7 +633,10 @@ export class Agent<
     assert(locatePrompt, 'missing locate prompt for tap');
 
     const locateOpt = this.withAutoMemoryForAction(locatePrompt, opt);
-    const detailedLocateParam = buildDetailedLocateParam(locatePrompt, locateOpt);
+    const detailedLocateParam = buildDetailedLocateParam(
+      locatePrompt,
+      locateOpt,
+    );
 
     const fileChooserAccept = opt?.fileChooserAccept
       ? this.normalizeFileInput(opt.fileChooserAccept)
@@ -898,7 +909,10 @@ export class Agent<
     }
 
     const locateOpt = this.withAutoMemoryForAction(locatePrompt, opt);
-    const detailedLocateParam = buildDetailedLocateParam(locatePrompt || '', locateOpt);
+    const detailedLocateParam = buildDetailedLocateParam(
+      locatePrompt || '',
+      locateOpt,
+    );
 
     return this.callActionInActionSpace('Scroll', {
       ...(opt || {}),
@@ -1209,7 +1223,9 @@ export class Agent<
     opt?: LocateOption,
   ) {
     if (Array.isArray(promptOrPrompts)) {
-      const baseLocateOpt: LocateOption | undefined = opt ? { ...opt } : undefined;
+      const baseLocateOpt: LocateOption | undefined = opt
+        ? { ...opt }
+        : undefined;
       const shouldAutoMemory = this.shouldAutoMemoryForLocate();
       const duplicatedPromptCounter = new Map<string, number>();
 
@@ -1247,8 +1263,14 @@ export class Agent<
             }
           : undefined;
 
-        const detailedParam = buildDetailedLocateParam(prompt, normalizedLocateOpt);
-        assert(detailedParam, `cannot get locate param for aiLocate at index ${index}`);
+        const detailedParam = buildDetailedLocateParam(
+          prompt,
+          normalizedLocateOpt,
+        );
+        assert(
+          detailedParam,
+          `cannot get locate param for aiLocate at index ${index}`,
+        );
         return detailedParam;
       });
 
@@ -1753,26 +1775,18 @@ export class Agent<
   }
 
   clearMemoryByPrompt(prompt: TUserPrompt): number {
-    if (!this.taskCache) {
-      throw new Error('Cache is not configured');
-    }
-
     const memoryPrefix = buildMemoryCachePrefixByPrompt(prompt);
     if (!memoryPrefix) {
       return 0;
     }
-    return this.taskCache.removeLocateCachesByPrefix(memoryPrefix);
+    return this.taskMemory.removeLocateMemoriesByPrefix(memoryPrefix);
   }
 
   /**
    * Clear all memory records created via locate memory keys.
    */
   clearAllMemory(): number {
-    if (!this.taskCache) {
-      throw new Error('Cache is not configured');
-    }
-
-    return this.taskCache.removeLocateCachesByPrefix('memory://');
+    return this.taskMemory.removeLocateMemoriesByPrefix('memory://');
   }
 }
 

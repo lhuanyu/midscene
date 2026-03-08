@@ -60,6 +60,16 @@ describe('AndroidAgent', () => {
           }),
       ).not.toThrow();
     });
+
+    it('should expose memory APIs without requiring cache config', () => {
+      const mockPage = new AndroidDevice('test-device');
+      const agent = new AndroidAgent(mockPage, {
+        modelConfig: mockedModelConfig,
+      });
+
+      expect(agent.clearAllMemory()).toBe(0);
+      expect(agent.clearMemoryByPrompt('search button')).toBe(0);
+    });
   });
 
   describe('launch', () => {

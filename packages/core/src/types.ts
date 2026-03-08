@@ -1081,7 +1081,7 @@ export interface AgentOpt {
    * Remember action targets by prompt for action APIs (aiTap/aiInput/etc.).
    *
    * This improves repeated locate performance in continuous operations by
-   * reusing memory-backed locate cache entries.
+   * reusing short-term memory entries that are separate from persistent cache.
    *
    * @default true
    */
@@ -1091,6 +1091,9 @@ export interface AgentOpt {
    * Remember locate targets by prompt for aiLocate/aiLocateAll.
    * For aiLocate with prompt arrays, duplicate prompts are disambiguated with
    * an internal `#index` suffix on the same base hash.
+   *
+   * The remembered locations live in the agent's short-term memory, so the
+   * same core behavior is available to web, Android, iOS, and computer agents.
    *
    * @default true
    */

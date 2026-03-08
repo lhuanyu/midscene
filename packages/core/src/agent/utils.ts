@@ -20,7 +20,6 @@ import { getDebug } from '@midscene/shared/logger';
 import { _keyDefinitions } from '@midscene/shared/us-keyboard-layout';
 import { assert, logMsg, uuid } from '@midscene/shared/utils';
 import dayjs from 'dayjs';
-import type { TaskCache } from './task-cache';
 import { debug as cacheDebug } from './task-cache';
 
 export async function commonContextParser(
@@ -248,7 +247,7 @@ export function matchElementFromPlan(
 
 export async function matchElementFromCache(
   context: {
-    taskCache?: TaskCache;
+    isCacheResultUsed?: boolean;
     interfaceInstance: AbstractInterface;
   },
   cacheEntry: ElementCacheFeature | undefined,
@@ -264,7 +263,7 @@ export async function matchElementFromCache(
     return undefined;
   }
 
-  if (!context.taskCache?.isCacheResultUsed) {
+  if (!context.isCacheResultUsed) {
     return undefined;
   }
 
