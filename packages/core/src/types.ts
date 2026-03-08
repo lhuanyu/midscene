@@ -298,8 +298,10 @@ export interface RawResponsePlanningAIResponse {
   markFinishedIndexes?: number[];
 }
 
-export interface PlanningAIResponse
-  extends Omit<RawResponsePlanningAIResponse, 'action'> {
+export interface PlanningAIResponse extends Omit<
+  RawResponsePlanningAIResponse,
+  'action'
+> {
   actions?: PlanningAction[];
   usage?: AIUsageInfo;
   rawResponse?: string;
@@ -1080,8 +1082,8 @@ export interface AgentOpt {
   /**
    * Remember action targets by prompt for action APIs (aiTap/aiInput/etc.).
    *
-   * This improves repeated locate performance in continuous operations by
-   * reusing short-term memory entries that are separate from persistent cache.
+   * This stores short-term memory entries that are separate from persistent
+   * cache. Reuse still requires `useMemory: true` on the specific call.
    *
    * @default true
    */
@@ -1094,6 +1096,7 @@ export interface AgentOpt {
    *
    * The remembered locations live in the agent's short-term memory, so the
    * same core behavior is available to web, Android, iOS, and computer agents.
+   * Reuse still requires `useMemory: true` on the specific call.
    *
    * @default true
    */

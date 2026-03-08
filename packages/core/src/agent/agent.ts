@@ -191,9 +191,11 @@ export class Agent<
     return this.dumpUpdateListeners[0];
   }
 
-  set onDumpUpdate(callback:
-    | ((dump: string, executionDump?: ExecutionDump) => void)
-    | undefined) {
+  set onDumpUpdate(
+    callback:
+      | ((dump: string, executionDump?: ExecutionDump) => void)
+      | undefined,
+  ) {
     // Clear existing listeners
     this.dumpUpdateListeners = [];
     // Add callback to array if provided
@@ -260,7 +262,7 @@ export class Agent<
     locatePrompt: TUserPrompt | undefined,
     opt?: LocateOption,
   ): LocateOption | undefined {
-    const resolvedUseMemory = opt?.useMemory ?? true;
+    const resolvedUseMemory = opt?.useMemory ?? false;
 
     if (!this.shouldAutoMemoryForLocate()) {
       return opt ? { ...opt, useMemory: resolvedUseMemory } : undefined;
