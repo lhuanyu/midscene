@@ -33,7 +33,21 @@ Midscene 针对每个不同环境都有对应的 Agent。每个 Agent 的构造�
   然后通过 `http://localhost:3000`（或终端显示的端口）访问报告。
 - `screenshotShrinkFactor: number`: 控制截图的缩放比例，以减少发送给 AI 模型的图像大小，从而减少 token 消耗。默认值为 1（不缩放）。如果将其设置为 2，则截图的宽高将缩小为原来的一半，面积缩小为原来的四分之一。你可以根据实际情况调整这个值，以在图像清晰度和 token 消耗之间找到最佳平衡点。
   - 对于移动端设备，将 `screenshotShrinkFactor` 设置为 2 可以在保持清晰度的同时减少 token 的消耗，但不建议设置的值超过 3，否则可能会导致图像过于模糊，影响 AI 模型的理解。
-  - 对于 Web 页面，如果页面内容比较复杂或包含大量细节，不建议设置 `screenshotShrinkFactor`，以避免截图过于模糊。此外，如果为了让 Web 页面截图有更高的清晰度，可以配置 Puppeteer 或 Playwright 的 `deviceScaleFactor` 为 2，这可以让 Puppeteer 或 Playwright 按照高清屏的方式来渲染页面。
+- 对于 Web 页面，如果页面内容比较复杂或包含大量细节，不建议设置 `screenshotShrinkFactor`，以避免截图过于模糊。此外，如果为了让 Web 页面截图有更高的清晰度，可以配置 Puppeteer 或 Playwright 的 `deviceScaleFactor` 为 2，这可以让 Puppeteer 或 Playwright 按照高清屏的方式来渲染页面。
+
+**Prompt memory 配置示例：**
+```typescript
+const agent = new PuppeteerAgent(page, {
+  // Prompt memory 默认开启，所以这两个配置通常可以省略。
+  rememberActionTargets: true,
+  rememberLocateTargets: true,
+});
+
+const agentWithoutPromptMemory = new PuppeteerAgent(page, {
+  rememberActionTargets: false,
+  rememberLocateTargets: false,
+});
+```
 
 ### 自定义模型
 
@@ -208,7 +222,6 @@ function aiTap(locate: string | Object, options?: Object): Promise<void>;
     - `deepLocate?: boolean` - 是否开启[深度定位](#深度定位deeplocate)。该参数原来叫 `deepThink`，现已更名为 `deepLocate`。默认值为 false。
     - `xpath?: string` - 目标元素的 xpath 路径，用于执行当前操作。如果提供了这个 xpath，Midscene 会优先使用该 xpath 来找到元素，然后依次使用缓存和 AI 模型。默认值为空
     - `cacheable?: boolean` - 当启用 [缓存功能](./caching.mdx) 时，是否允许缓存当前 API 调用结果。默认值为 true
-    - `useMemory?: boolean` - 是否在调用 AI 定位前优先尝试 prompt 记忆缓存。`aiLocate` / `aiLocateAll` 默认值为 true。
     - `fileChooserAccept?: string | string[]` - 当文件选择器弹出时，指定对应的文件路径。可以是单个文件路径或路径数组。仅在 web 页面（Playwright、Puppeteer）中可用。
       - **注意**：如果文件输入框不支持多文件（没有 `multiple` 属性），但是传入了多个文件，会抛出错误。
       - **注意**：如果点击触发了文件选择器但没有传入 `fileChooserAccept` 参数，文件选择器会被忽略，页面可以继续正常操作。
@@ -784,6 +797,7 @@ function aiLocate(
     - `deepLocate?: boolean` - 是否开启[深度定位](#深度定位deeplocate)。该参数原来叫 `deepThink`，现已更名为 `deepLocate`。默认值为 false。
     - `xpath?: string` - 目标元素的 xpath 路径，用于执行当前操作。如果提供了这个 xpath，Midscene 会优先使用该 xpath 来找到元素，然后依次使用缓存和 AI 模型。默认值为空
     - `cacheable?: boolean` - 当启用 [缓存功能](./caching.mdx) 时，是否允许缓存当前 API 调用结果。默认值为 true
+    - `useMemory?: boolean` - 是否在调用 AI 定位前优先尝试 prompt 记忆缓存。`aiLocate` / `aiLocateAll` 默认值为 true。
 
 - 返回值：
 
@@ -805,9 +819,23 @@ await agent.aiLocate('页面顶部的登录按钮', {
 
 对于需要定位元素的 API（`aiTap`、`aiInput`、`aiLocate` 等），Midscene 会基于规范化后的 prompt 生成内部记忆键并跨轮复用。
 
+- Prompt memory 默认开启；只有在你想禁用时才需要显式配置。
 - 即时操作 API（`aiTap`、`aiInput`、`aiHover` 等）里，`useMemory` 默认是 `false`。
 - 定位 API（`aiLocate`、`aiLocateAll`）里，`useMemory` 默认是 `true`。
 - 在 `aiLocate([prompts])` 中，同一次调用里重复的 prompt 会在内部通过索引后缀进行区分。
+
+```typescript
+// 全局控制：对这个 agent 实例关闭 prompt memory
+const agent = new PuppeteerAgent(page, {
+  rememberActionTargets: false,
+  rememberLocateTargets: false,
+});
+
+// 单次控制：只对当前 locate 禁用记忆复用
+await agent.aiLocate('页面顶部的登录按钮', {
+  useMemory: false,
+});
+```
 
 ### `agent.aiWaitFor()`
 

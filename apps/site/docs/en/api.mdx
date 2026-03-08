@@ -31,7 +31,21 @@ All agents share these base options:
   Then access the report via `http://localhost:3000` (or the port shown in the terminal).
 - `screenshotShrinkFactor: number`: Controls the scaling ratio of screenshots to reduce the image size sent to the AI model, thereby reducing token consumption. The default value is 1 (no scaling). If set to 2, the width and height of the screenshot will be halved, and the area will be reduced to a quarter of the original. You can adjust this value based on your actual situation to find the best balance between image clarity and token consumption.
   - For mobile devices, setting `screenshotShrinkFactor` to 2 can reduce token consumption while maintaining clarity, but it is not recommended to set it higher than 3, as this may cause the image to be too blurry and affect the AI model's understanding.
-  - For web pages, if the content is complex or contains a lot of details, it is not recommended to set `screenshotShrinkFactor` to avoid overly blurry screenshots. Additionally, if you want higher clarity for web page screenshots, you can configure Puppeteer or Playwright's `deviceScaleFactor` to 2, which will allow Puppeteer or Playwright to render the page as if it were a high-definition screen.
+- For web pages, if the content is complex or contains a lot of details, it is not recommended to set `screenshotShrinkFactor` to avoid overly blurry screenshots. Additionally, if you want higher clarity for web page screenshots, you can configure Puppeteer or Playwright's `deviceScaleFactor` to 2, which will allow Puppeteer or Playwright to render the page as if it were a high-definition screen.
+
+**Prompt memory configuration example:**
+```typescript
+const agent = new PuppeteerAgent(page, {
+  // Prompt memory is enabled by default, so these two options are optional.
+  rememberActionTargets: true,
+  rememberLocateTargets: true,
+});
+
+const agentWithoutPromptMemory = new PuppeteerAgent(page, {
+  rememberActionTargets: false,
+  rememberLocateTargets: false,
+});
+```
 
 ### Custom model configuration
 
@@ -811,9 +825,23 @@ await agent.aiLocate('The login button at the top of the page', {
 
 For APIs that need element locating (`aiTap`, `aiInput`, `aiLocate`, etc.), Midscene derives an internal memory key from normalized prompt text and reuses it across runs.
 
+- Prompt memory is enabled by default. You only need to configure it when you want to disable it.
 - For instant-action APIs (`aiTap`, `aiInput`, `aiHover`, ...), `useMemory` defaults to `false`.
 - For locate APIs (`aiLocate`, `aiLocateAll`), `useMemory` defaults to `true`.
 - For `aiLocate([prompts])`, duplicate prompts in the same call are disambiguated internally with an index suffix.
+
+```typescript
+// Global control: disable prompt memory for this agent instance
+const agent = new PuppeteerAgent(page, {
+  rememberActionTargets: false,
+  rememberLocateTargets: false,
+});
+
+// Per-call control: disable reuse only for this locate
+await agent.aiLocate('The login button at the top of the page', {
+  useMemory: false,
+});
+```
 
 ### `agent.aiWaitFor()`
 
