@@ -176,8 +176,31 @@ const Sidebar = (props: SidebarProps = {}): JSX.Element => {
     ) : null;
   };
 
+  const isLocateTask = (task: ExecutionTaskWithSearchAreaUsage) => {
+    return task.type === 'Locate' || task.subType === 'Locate';
+  };
+
+  const getUseMemoryTag = (task: ExecutionTaskWithSearchAreaUsage) => {
+    return isLocateTask(task) &&
+      (task as ExecutionTaskPlanningLocate)?.param?.useMemory === true ? (
+      <Tag
+        className="memory-tag"
+        style={{
+          padding: '0 4px',
+          marginLeft: '4px',
+          marginRight: 0,
+          lineHeight: '16px',
+        }}
+        bordered={false}
+      >
+        Memory
+      </Tag>
+    ) : null;
+  };
+
   const getDeepLocateTag = (task: ExecutionTaskWithSearchAreaUsage) => {
-    return (task as ExecutionTaskPlanningLocate)?.param?.deepLocate ? (
+    return isLocateTask(task) &&
+      (task as ExecutionTaskPlanningLocate)?.param?.deepLocate ? (
       <Tag
         className="deeplocate-tag"
         bordered={false}
@@ -507,6 +530,7 @@ const Sidebar = (props: SidebarProps = {}): JSX.Element => {
             <span>{taskName}</span>
             {getTitleIcon(task)}
             {getCacheTag(task)}
+            {getUseMemoryTag(task)}
             {getDeepLocateTag(task)}
             {getDeepThinkTag(task)}
           </div>

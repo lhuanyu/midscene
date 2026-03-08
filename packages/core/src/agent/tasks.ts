@@ -38,6 +38,7 @@ import { assert } from '@midscene/shared/utils';
 import { ExecutionSession } from './execution-session';
 import { TaskBuilder } from './task-builder';
 import type { TaskCache } from './task-cache';
+import type { TaskMemory } from './task-memory';
 export { locatePlanForLocate } from './task-builder';
 import { setTimingFieldOnce } from '@/task-timing';
 import { descriptionOfTree } from '@midscene/shared/extractor';
@@ -69,6 +70,8 @@ export class TaskExecutor {
 
   taskCache?: TaskCache;
 
+  taskMemory?: TaskMemory;
+
   private readonly providedActionSpace: DeviceAction[];
 
   private readonly taskBuilder: TaskBuilder;
@@ -95,6 +98,7 @@ export class TaskExecutor {
     service: Service,
     opts: {
       taskCache?: TaskCache;
+      taskMemory?: TaskMemory;
       onTaskStart?: ExecutionTaskProgressOptions['onTaskStart'];
       replanningCycleLimit?: number;
       waitAfterAction?: number;
@@ -106,6 +110,7 @@ export class TaskExecutor {
     this.interface = interfaceInstance;
     this.service = service;
     this.taskCache = opts.taskCache;
+    this.taskMemory = opts.taskMemory;
     this.onTaskStartCallback = opts?.onTaskStart;
     this.replanningCycleLimit = opts.replanningCycleLimit;
     this.waitAfterAction = opts.waitAfterAction;
@@ -117,6 +122,7 @@ export class TaskExecutor {
       interfaceInstance,
       service,
       taskCache: opts.taskCache,
+      taskMemory: opts.taskMemory,
       actionSpace: this.getActionSpace(),
       waitAfterAction: opts.waitAfterAction,
     });

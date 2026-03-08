@@ -24,7 +24,8 @@ import type { IModelConfig } from '@midscene/shared/env';
 import { generateElementByRect } from '@midscene/shared/extractor';
 import { getDebug } from '@midscene/shared/logger';
 import { assert } from '@midscene/shared/utils';
-import type { TaskCache } from './task-cache';
+import type { LocateCache, MatchCacheResult, TaskCache } from './task-cache';
+import type { TaskMemory } from './task-memory';
 import {
   ifPlanLocateParamIsBbox,
   matchElementFromCache,
@@ -72,6 +73,7 @@ interface TaskBuilderDeps {
   interfaceInstance: AbstractInterface;
   service: Service;
   taskCache?: TaskCache;
+  taskMemory?: TaskMemory;
   actionSpace: DeviceAction[];
   waitAfterAction?: number;
 }
@@ -96,6 +98,8 @@ export class TaskBuilder {
 
   private readonly taskCache?: TaskCache;
 
+  private readonly taskMemory?: TaskMemory;
+
   private readonly actionSpace: DeviceAction[];
 
   private readonly waitAfterAction?: number;
@@ -104,14 +108,46 @@ export class TaskBuilder {
     interfaceInstance,
     service,
     taskCache,
+    taskMemory,
     actionSpace,
     waitAfterAction,
   }: TaskBuilderDeps) {
     this.interface = interfaceInstance;
     this.service = service;
     this.taskCache = taskCache;
+    this.taskMemory = taskMemory;
     this.actionSpace = actionSpace;
     this.waitAfterAction = waitAfterAction;
+  }
+
+  private matchLocateRecord(
+    prompt: TUserPrompt,
+    memoryPrompt?: string,
+  ): MatchCacheResult<LocateCache> | undefined {
+    if (memoryPrompt) {
+      return this.taskMemory?.matchLocateMemory(memoryPrompt);
+    }
+    return this.taskCache?.matchLocateCache(prompt);
+  }
+
+  private updateLocateRecord(
+    prompt: TUserPrompt,
+    cache: LocateCache['cache'],
+    cachedRecord?: MatchCacheResult<LocateCache>,
+    memoryPrompt?: string,
+  ) {
+    const newRecord: LocateCache = {
+      type: 'locate',
+      prompt,
+      cache,
+    };
+
+    if (memoryPrompt) {
+      this.taskMemory?.updateOrAppendMemoryRecord(newRecord, cachedRecord);
+      return;
+    }
+
+    this.taskCache?.updateOrAppendCacheRecord(newRecord, cachedRecord);
   }
 
   public async build(
@@ -490,11 +526,9 @@ export class TaskBuilder {
         const memoryCachePrompt = param.memory;
         const shouldUseMemory = !memoryCachePrompt || param.useMemory === true;
         const cachePrompt = memoryCachePrompt ?? param.prompt;
-        const locateCacheRecord = this.taskCache?.matchLocateCache(
-          cachePrompt,
-          {
-            reusable: !!memoryCachePrompt,
-          },
+        const locateCacheRecord = this.matchLocateRecord(
+          param.prompt,
+          memoryCachePrompt,
         );
         const cacheEntry = shouldUseMemory
           ? locateCacheRecord?.cacheContent?.cache
@@ -505,7 +539,9 @@ export class TaskBuilder {
             ? null
             : await matchElementFromCache(
                 {
-                  taskCache: this.taskCache,
+                  isCacheResultUsed: memoryCachePrompt
+                    ? true
+                    : this.taskCache?.isCacheResultUsed,
                   interfaceInstance: this.interface,
                 },
                 cacheEntry,
@@ -561,13 +597,13 @@ export class TaskBuilder {
         let currentCacheEntry: ElementCacheFeature | undefined;
         // Write cache if:
         // 1. element found
-        // 2. taskCache enabled
+        // 2. a persistent cache or short-term memory store is available
         // 3. not a cache hit (otherwise we'd be writing what we just read)
         // 4. not already cached for plan hit case (avoid redundant writes), OR allow update if cache validation failed
         // 5. cacheable is not explicitly false
         if (
           element &&
-          this.taskCache &&
+          (memoryCachePrompt ? this.taskMemory : this.taskCache) &&
           !isCacheHit &&
           (!isPlanHit || !locateCacheAlreadyExists) &&
           param?.cacheable !== false
@@ -606,13 +642,11 @@ export class TaskBuilder {
                   feature,
                 );
                 currentCacheEntry = feature;
-                this.taskCache.updateOrAppendCacheRecord(
-                  {
-                    type: 'locate',
-                    prompt: cachePrompt,
-                    cache: feature,
-                  },
+                this.updateLocateRecord(
+                  cachePrompt,
+                  feature,
                   locateCacheRecord,
+                  memoryCachePrompt,
                 );
               } else {
                 debug(
@@ -745,8 +779,9 @@ export class TaskBuilder {
           number,
           {
             cachePrompt: TUserPrompt;
-            locateCacheRecord: ReturnType<TaskCache['matchLocateCache']>;
+            locateCacheRecord?: MatchCacheResult<LocateCache>;
             isCacheHit: boolean;
+            memoryCachePrompt?: string;
           }
         >();
 
@@ -756,11 +791,9 @@ export class TaskBuilder {
           const shouldUseMemory =
             !memoryCachePrompt || currentParam.useMemory === true;
           const cachePrompt = memoryCachePrompt ?? currentParam.prompt;
-          const locateCacheRecord = this.taskCache?.matchLocateCache(
-            cachePrompt,
-            {
-              reusable: !!memoryCachePrompt,
-            },
+          const locateCacheRecord = this.matchLocateRecord(
+            currentParam.prompt,
+            memoryCachePrompt,
           );
           const cacheEntry = shouldUseMemory
             ? locateCacheRecord?.cacheContent?.cache
@@ -793,7 +826,9 @@ export class TaskBuilder {
             ? null
             : await matchElementFromCache(
                 {
-                  taskCache: this.taskCache,
+                  isCacheResultUsed: memoryCachePrompt
+                    ? true
+                    : this.taskCache?.isCacheResultUsed,
                   interfaceInstance: this.interface,
                 },
                 cacheEntry,
@@ -813,6 +848,7 @@ export class TaskBuilder {
             cachePrompt,
             locateCacheRecord,
             isCacheHit: !!elementFromCache,
+            memoryCachePrompt,
           });
 
           if (element) {
@@ -845,7 +881,10 @@ export class TaskBuilder {
           });
         }
 
-        if (this.taskCache && this.interface.cacheFeatureForPoint) {
+        if (
+          (this.taskCache || this.taskMemory) &&
+          this.interface.cacheFeatureForPoint
+        ) {
           for (let index = 0; index < param.length; index++) {
             const element = outputs[index];
             const currentParam = param[index];
@@ -882,13 +921,11 @@ export class TaskBuilder {
               if (!hasNonEmptyCache(feature)) {
                 continue;
               }
-              this.taskCache.updateOrAppendCacheRecord(
-                {
-                  type: 'locate',
-                  prompt: cacheMeta.cachePrompt,
-                  cache: feature,
-                },
+              this.updateLocateRecord(
+                cacheMeta.cachePrompt,
+                feature,
                 cacheMeta.locateCacheRecord,
+                cacheMeta.memoryCachePrompt,
               );
             } catch (error) {
               debug('cacheFeatureForPoint failed in LocateMultiple: %s', error);
@@ -943,14 +980,11 @@ export class TaskBuilder {
         };
 
         const memoryCachePrompt = param.memory;
-        const shouldUseMemory =
-          !memoryCachePrompt || param.useMemory === true;
-        const locateCacheRecord =
-          memoryCachePrompt && this.taskCache
-            ? this.taskCache.matchLocateCache(memoryCachePrompt, {
-                reusable: true,
-              })
-            : undefined;
+        const shouldUseMemory = !memoryCachePrompt || param.useMemory === true;
+        const locateCacheRecord = this.matchLocateRecord(
+          param.prompt,
+          memoryCachePrompt,
+        );
         const cacheEntry = shouldUseMemory
           ? locateCacheRecord?.cacheContent?.cache
           : undefined;
@@ -1011,7 +1045,7 @@ export class TaskBuilder {
 
         if (
           memoryCachePrompt &&
-          this.taskCache &&
+          this.taskMemory &&
           this.interface.cacheFeatureForPoint &&
           Array.isArray(locateResult.results) &&
           locateResult.results.length > 0 &&
@@ -1049,15 +1083,13 @@ export class TaskBuilder {
           }
 
           if (entries.length > 0) {
-            this.taskCache.updateOrAppendCacheRecord(
+            this.updateLocateRecord(
+              memoryCachePrompt,
               {
-                type: 'locate',
-                prompt: memoryCachePrompt,
-                cache: {
-                  entries,
-                },
+                entries,
               },
               locateCacheRecord,
+              memoryCachePrompt,
             );
           }
         }

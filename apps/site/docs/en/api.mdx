@@ -22,8 +22,8 @@ All agents share these base options:
 - `aiActContext: string`: Some background knowledge that should be sent to the AI model when calling `agent.aiAct()`, like 'close the cookie consent dialog first if it exists' (Default: undefined). Previously exposed as `aiActionContext`; the legacy name is still accepted for backward compatibility.
 - `replanningCycleLimit: number`: The maximum number of `aiAct` replanning cycles. Default is 20 (40 for UI-TARS models). Prefer setting this via the agent option; reading `MIDSCENE_REPLANNING_CYCLE_LIMIT` is only for backward compatibility.
 - `waitAfterAction: number`: Wait time in milliseconds after each action execution. This allows the UI to settle and stabilize before the next action. Default is 300ms.
-- `rememberActionTargets: boolean`: Whether instant-action APIs (such as `aiTap`, `aiInput`) should remember located targets by prompt for future reuse. Default is true.
-- `rememberLocateTargets: boolean`: Whether locate APIs (`aiLocate`, `aiLocateAll`) should remember located targets by prompt for future reuse. Default is true.
+- `rememberActionTargets: boolean`: Whether instant-action APIs (such as `aiTap`, `aiInput`) should remember located targets by prompt. This only controls recording; actual reuse still requires `useMemory: true` on the call. Default is true.
+- `rememberLocateTargets: boolean`: Whether locate APIs (`aiLocate`, `aiLocateAll`) should remember located targets by prompt. This only controls recording; actual reuse still requires `useMemory: true` on the call. Default is true.
 - `onTaskStartTip: (tip: string) => void | Promise<void>`: Optional hook that fires before each execution task begins with a human-readable summary of the task (Default: undefined)
 - `outputFormat: 'single-html' | 'html-and-external-assets'`: Controls how the report is generated. `'single-html'` (default) embeds all screenshots as base64 in a single HTML file. `'html-and-external-assets'` saves screenshots as separate PNG files in a subdirectory, useful when report files become too large. **Note**: When using `'html-and-external-assets'`, the report must be accessed via an HTTP server or CDN URL - it cannot be opened directly using the `file://` protocol. This is because browser CORS (Cross-Origin Resource Sharing) restrictions prevent loading local images from relative paths when using the file protocol. For local testing, start a simple HTTP server in the report directory. Navigate to the report directory and run one of these commands:
   - Using Node.js: `npx serve`
@@ -31,7 +31,21 @@ All agents share these base options:
   Then access the report via `http://localhost:3000` (or the port shown in the terminal).
 - `screenshotShrinkFactor: number`: Controls the scaling ratio of screenshots to reduce the image size sent to the AI model, thereby reducing token consumption. The default value is 1 (no scaling). If set to 2, the width and height of the screenshot will be halved, and the area will be reduced to a quarter of the original. You can adjust this value based on your actual situation to find the best balance between image clarity and token consumption.
   - For mobile devices, setting `screenshotShrinkFactor` to 2 can reduce token consumption while maintaining clarity, but it is not recommended to set it higher than 3, as this may cause the image to be too blurry and affect the AI model's understanding.
-  - For web pages, if the content is complex or contains a lot of details, it is not recommended to set `screenshotShrinkFactor` to avoid overly blurry screenshots. Additionally, if you want higher clarity for web page screenshots, you can configure Puppeteer or Playwright's `deviceScaleFactor` to 2, which will allow Puppeteer or Playwright to render the page as if it were a high-definition screen.
+- For web pages, if the content is complex or contains a lot of details, it is not recommended to set `screenshotShrinkFactor` to avoid overly blurry screenshots. Additionally, if you want higher clarity for web page screenshots, you can configure Puppeteer or Playwright's `deviceScaleFactor` to 2, which will allow Puppeteer or Playwright to render the page as if it were a high-definition screen.
+
+**Prompt memory configuration example:**
+```typescript
+const agent = new PuppeteerAgent(page, {
+  // Prompt memory recording is enabled by default, so these two options are optional.
+  rememberActionTargets: true,
+  rememberLocateTargets: true,
+});
+
+const agentWithoutPromptMemory = new PuppeteerAgent(page, {
+  rememberActionTargets: false,
+  rememberLocateTargets: false,
+});
+```
 
 ### Custom model configuration
 
@@ -787,7 +801,7 @@ function aiLocate(
     - `deepLocate?: boolean` - Whether to enable [Deep Locate](#deep-locate-deeplocate). Previously named `deepThink`, now renamed to `deepLocate`. False by default.
     - `xpath?: string` - The xpath of the element to operate. If provided, Midscene will first use this xpath to locate the element before using the cache and the AI model. Empty by default.
     - `cacheable?: boolean` - Whether cacheable when enabling [caching feature](./caching.mdx). True by default.
-    - `useMemory?: boolean` - Whether to try prompt-memory cache before AI locate. For `aiLocate` / `aiLocateAll`, default is true.
+    - `useMemory?: boolean` - Whether to try prompt-memory cache before AI locate. For `aiLocate` / `aiLocateAll`, default is false.
 
 - Return Value:
 
@@ -801,19 +815,33 @@ const locateInfo = await agent.aiLocate(
 );
 console.log(locateInfo);
 
-// Explicitly disable memory reuse for this locate call
+// Manually enable memory reuse for this locate call
 await agent.aiLocate('The login button at the top of the page', {
-  useMemory: false,
+  useMemory: true,
 });
 ```
 
 ### Prompt Memory Behavior
 
-For APIs that need element locating (`aiTap`, `aiInput`, `aiLocate`, etc.), Midscene derives an internal memory key from normalized prompt text and reuses it across runs.
+For APIs that need element locating (`aiTap`, `aiInput`, `aiLocate`, etc.), Midscene derives an internal memory key from normalized prompt text and stores it by default.
 
+- Prompt memory recording is enabled by default. You only need to configure it when you want to disable recording.
 - For instant-action APIs (`aiTap`, `aiInput`, `aiHover`, ...), `useMemory` defaults to `false`.
-- For locate APIs (`aiLocate`, `aiLocateAll`), `useMemory` defaults to `true`.
+- For locate APIs (`aiLocate`, `aiLocateAll`), `useMemory` also defaults to `false`.
 - For `aiLocate([prompts])`, duplicate prompts in the same call are disambiguated internally with an index suffix.
+
+```typescript
+// Global control: disable prompt memory recording for this agent instance
+const agent = new PuppeteerAgent(page, {
+  rememberActionTargets: false,
+  rememberLocateTargets: false,
+});
+
+// Per-call control: manually enable reuse for this locate
+await agent.aiLocate('The login button at the top of the page', {
+  useMemory: true,
+});
+```
 
 ### `agent.aiWaitFor()`
 

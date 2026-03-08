@@ -14,6 +14,7 @@ export {
 
 export { type LocateCache, type PlanningCache, TaskCache } from './task-cache';
 export { cacheFileExt } from './task-cache';
+export { TaskMemory } from './task-memory';
 
 export { TaskExecutor } from './tasks';
 

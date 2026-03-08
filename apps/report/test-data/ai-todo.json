@@ -52,7 +52,8 @@
             "type": "Insight",
             "subType": "Locate",
             "param": {
-                "prompt": "The input box with placeholder text 'What needs to be done?' at the center of the page"
+                "prompt": "The input box with placeholder text 'What needs to be done?' at the center of the page",
+                "useMemory": true
             },
             "timing": {
                 "start": 1723618284551,
